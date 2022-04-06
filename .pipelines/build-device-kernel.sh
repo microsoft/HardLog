@@ -28,7 +28,8 @@ pushd device
   tar xf ${KERNEL_SRC} -C kernel
 
   pushd kernel
-    ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make -j$(nproc)
+    ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make prepare
+    ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make scripts
     ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make M=../module -j$(nproc)
   popd
 
