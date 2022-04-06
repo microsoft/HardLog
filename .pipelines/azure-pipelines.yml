@@ -1,0 +1,17 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
+#
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-20.04'
+
+steps:
+  - script: .pipelines/prepare.sh
+    displayName: Prepare packages
+
+  - script: .pipelines/build-host-kernel.sh
+    displayName: Build host
+
+  - script: .pipelines/build-device-kernel.sh
+    displayName: Build device
