@@ -4,17 +4,23 @@
 trigger: none
 
 jobs:
-- job: build_hardlog
+- job: build_host
   timeoutInMinutes: 360
   pool:
     vmImage: 'ubuntu-20.04'
   steps:
-    - script: .pipelines/prepare.sh
+    - script: .pipelines/prepare-host.sh
       displayName: Prepare packages
-
     - script: .pipelines/build-host-kernel.sh
       displayName: Build host
 
+- job: build_device
+  timeoutInMinutes: 360
+  pool:
+    vmImage: 'ubuntu-20.04'
+  steps:
+    - script: .pipelines/prepare-device.sh
+      displayName: Prepare packages
     - script: .pipelines/build-device-kernel.sh
       displayName: Build device
 
