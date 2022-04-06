@@ -18,7 +18,7 @@ jobs:
     - script: .pipelines/build-device-kernel.sh
       displayName: Build device
 
-- job: credscan_component
+- job: credscan
   timeoutInMinutes: 360
   pool:
     vmImage: 'windows-latest'
@@ -26,9 +26,3 @@ jobs:
     - task: CredScan@2
       inputs:
         toolMajorVersion: 'V2'
-
-    - task: ComponentGovernanceComponentDetection@0
-      inputs:
-        scanType: 'Register'
-        verbosity: 'Verbose'
-        alertWarningLevel: 'High'
