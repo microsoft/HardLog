@@ -3,32 +3,46 @@
 #
 trigger: none
 
+parameters:
+  - name: 'buildHost'
+    type: boolean
+    default: false
+  - name: 'buildDevice'
+    type: boolean
+    default: false
+  - name: 'credScan'
+    type: boolean
+    default: false
+
 jobs:
-- job: build_host
-  timeoutInMinutes: 360
-  pool:
-    vmImage: 'ubuntu-20.04'
-  steps:
-    - script: .pipelines/prepare-host.sh
-      displayName: Prepare packages
-    - script: .pipelines/build-host-kernel.sh
-      displayName: Build host
+- ${{ if eq(parameters.buildHost, true) }}:
+  - job: build_host
+    timeoutInMinutes: 360
+    pool:
+      vmImage: 'ubuntu-20.04'
+    steps:
+      - script: .pipelines/prepare-host.sh
+        displayName: Prepare packages
+      - script: .pipelines/build-host-kernel.sh
+        displayName: Build host
 
-- job: build_device
-  timeoutInMinutes: 360
-  pool:
-    vmImage: 'ubuntu-20.04'
-  steps:
-    - script: .pipelines/prepare-device.sh
-      displayName: Prepare packages
-    - script: .pipelines/build-device-kernel.sh
-      displayName: Build device
+- ${{ if eq(parameters.buildDevice, true) }}:
+  - job: build_device
+    timeoutInMinutes: 360
+    pool:
+      vmImage: 'ubuntu-20.04'
+    steps:
+      - script: .pipelines/prepare-device.sh
+        displayName: Prepare packages
+      - script: .pipelines/build-device-kernel.sh
+        displayName: Build device
 
-- job: credscan
-  timeoutInMinutes: 360
-  pool:
-    vmImage: 'windows-latest'
-  steps:
-    - task: CredScan@2
-      inputs:
-        toolMajorVersion: 'V2'
+- ${{ if eq(parameters.credScan, true) }}:
+  - job: credscan
+    timeoutInMinutes: 360
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+      - task: CredScan@2
+        inputs:
+          toolMajorVersion: 'V2'
