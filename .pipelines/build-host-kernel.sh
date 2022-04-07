@@ -1,5 +1,6 @@
 #!/bin/bash -e
-set -x
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
 
 BASE_KERNEL=linux-5.4.92
 

@@ -1,5 +1,6 @@
 #!/bin/bash -e
-set -x
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
 
 sudo apt update
 sudo apt install -y \

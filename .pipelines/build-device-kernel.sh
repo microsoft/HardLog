@@ -1,5 +1,6 @@
 #!/bin/bash -e
-set -x
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
 
 # Armbian build
 # KERNEL_DEB=linux-source-legacy-rockchip64_22.05.0-trunk_all.deb 
