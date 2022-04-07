@@ -11,7 +11,7 @@ KERNEL_SRC=linux-source-4.4.213-rockchip64.tar.xz
 
 mkdir -p device/kernel
 pushd device
-# Armbian kernel build takes too long, so we cannot use Azure Pipeline (default: 60 min timoutout)
+# Armbian kernel build takes too long, so we cannot use build pipeline for this
 #   git clone https://github.com/armbian/build.git
 #   pushd build
 #     ./compile.sh BOARD=rockpro64 KERNEL_ONLY=yes BRANCH=legacy RELEASE=buster BUILD_KSRC=yes KERNEL_CONFIGURE=no BUILD_DESKTOP=no USE_TORRENT=no

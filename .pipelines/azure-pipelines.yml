@@ -3,53 +3,29 @@
 #
 trigger: none
 
-parameters:
-- name: 'buildHost'
-  type: boolean
-  default: false
-- name: 'buildDevice'
-  type: boolean
-  default: false
-- name: 'credScan'
-  type: boolean
-  default: false
-
 stages:
 - stage: build_hardlog
   pool:
     vmImage: 'ubuntu-20.04'
   jobs:
-  - ${{ if eq(parameters.buildHost, true) }}:
-    - job: build_host
-      timeoutInMinutes: 360
-      variables:
-        Codeql.BuildIdentifier: HardLogHost
-      steps:
-      - script: .pipelines/prepare-host.sh
-        displayName: Prepare packages
-      - script: .pipelines/build-host-kernel.sh
-        displayName: Build host
-
-  - ${{ if eq(parameters.buildDevice, true) }}:
-    - job: build_device
-      timeoutInMinutes: 360
-      variables:
-        Codeql.BuildIdentifier: HardLogDev
-      steps:
-      - script: .pipelines/prepare-device.sh
-        displayName: Prepare packages
-      - script: .pipelines/build-device-kernel.sh
-        displayName: Build device
+  - job: build_hardlog
+    timeoutInMinutes: 360
+    steps:
+    - script: .pipelines/prepare.sh
+      displayName: Prepare packages
+    - script: .pipelines/build-host-kernel.sh
+      displayName: Build host
+    - script: .pipelines/build-device-kernel.sh
+      displayName: Build device
 
 - stage: do_credscan
   pool:
     vmImage: 'windows-latest'
   jobs:
-  - ${{ if eq(parameters.credScan, true) }}:
-    - job: credscan
-      variables:
-        Codeql.SkipTaskAutoInjection: true
-      steps:
-      - task: CredScan@2
-        inputs:
-          toolMajorVersion: 'V2'
+  - job: credscan
+    variables:
+      Codeql.SkipTaskAutoInjection: true
+    steps:
+    - task: CredScan@2
+      inputs:
+        toolMajorVersion: 'V2'
