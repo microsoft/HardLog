@@ -77,7 +77,7 @@ void dump_log (void) {
     }
 
     char* trimbuf = (char*) malloc(tmpbuf_size);
-    if (!tmpbuf) {
+    if (!trimbuf) {
         cout << "error: couldn't allocate a buffer.\n";
         return;
     }
