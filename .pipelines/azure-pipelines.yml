@@ -42,7 +42,6 @@ stages:
         displayName: Build device
 
 - stage: do_credscan
-  dependsOn: []
   pool:
     vmImage: 'windows-latest'
   jobs:
