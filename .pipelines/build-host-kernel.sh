@@ -13,7 +13,13 @@ pushd host
   pushd kernel
     patch -s -p1 < ../hardlog-kernel.patch
     make defconfig
-    make -j$(nproc)
+#     make -j$(nproc)
+    make prepare
+    make scripts
+    # build HardLog files only
+    make kernel/audit.o
+    make kernel/auditsc.o
+    make kernel/hardlog.o
     make M=../module -j$(nproc)
   popd
 
