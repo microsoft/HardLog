@@ -15,7 +15,7 @@ parameters:
   default: false
 
 stages:
-- stage: Build HardLog
+- stage: build_hardlog
   pool:
     vmImage: 'ubuntu-20.04'
   jobs:
@@ -37,7 +37,7 @@ stages:
       - script: .pipelines/build-device-kernel.sh
         displayName: Build device
 
-- stage: Do CredScan
+- stage: do_credscan
   pool:
     vmImage: 'windows-latest'
   jobs:
