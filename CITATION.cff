@@ -9,7 +9,7 @@ authors:
     given-names:  Marcus
     affiliation:  "Microsoft Research"
 cff-version: 1.2.0
-message: "If you use this software, please cite the article from preferred-citation."
+message: "If you use this software, please cite the following article."
 preferred-citation:
   type: conference-paper
   authors:
@@ -23,6 +23,6 @@ preferred-citation:
       given-names:  Marcus
       affiliation:  "Microsoft Research"
   title: "HardLog: Practical Tamper-Proof System Auditing Using a Novel Audit Device"
-  journal: "IEEE Symposium on Security and Privacy (Okaland)"
-  month: 5
+  collection-title: "Proceedings of the 43rd IEEE Symposium on Security and Privacy (Oakland 2022)"
   year: 2022
+  month: 5
