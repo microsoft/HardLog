@@ -2,7 +2,7 @@
 
 To be filled
 
-# Organization
+## Organization
 
 ## Contributing
 
