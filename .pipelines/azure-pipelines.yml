@@ -25,6 +25,7 @@ stages:
   - job: credscan
     variables:
       Codeql.SkipTaskAutoInjection: true
+      skipComponentGovernanceDetection: true
     steps:
     - task: CredScan@2
       inputs:
