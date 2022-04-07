@@ -1,0 +1,28 @@
+authors:
+  - family-names: Ahmad
+    given-names:  Adil
+    affiliation:  "Purdue University"
+  - family-names: Lee
+    given-names:  Sangho 
+    affiliation:  "Microsoft Research"
+  - family-names: Peinado 
+    given-names:  Marcus
+    affiliation:  "Microsoft Research"
+cff-version: 1.2.0
+message: "If you use this software, please cite the article from preferred-citation."
+preferred-citation:
+  type: conference-paper
+  authors:
+    - family-names: Ahmad
+      given-names:  Adil
+      affiliation:  "Purdue University"
+    - family-names: Lee
+      given-names:  Sangho 
+      affiliation:  "Microsoft Research"
+    - family-names: Peinado 
+      given-names:  Marcus
+      affiliation:  "Microsoft Research"
+  title: "HardLog: Practical Tamper-Proof System Auditing Using a Novel Audit Device"
+  journal: "IEEE Symposium on Security and Privacy (Okaland)"
+  month: 5
+  year: 2022
