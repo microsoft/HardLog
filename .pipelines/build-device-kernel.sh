@@ -1,5 +1,5 @@
 #!/bin/bash -e
-# Copyright (c) Microsoft Corporation.
+# Copyright (c) 2022 Microsoft Corporation.
 # Licensed under the MIT License.
 
 # Armbian build
