@@ -25,8 +25,7 @@ pushd device
 
   wget -q https://armbian.hosthatch.com/apt/pool/main/l/linux-source-4.4.213-legacy-rockchip64/${KERNEL_DEB}
   dpkg -x ${KERNEL_DEB} .
-  cp usr/src/${KERNEL_SRC} .
-  tar xf ${KERNEL_SRC} -C kernel
+  tar xf usr/src/${KERNEL_SRC} -C kernel
 
   pushd kernel
     ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make prepare
