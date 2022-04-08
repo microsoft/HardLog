@@ -36,7 +36,7 @@
 #include "f_mass_storage.h"
 #include "hardlog.h"
 
-dev_t dev = 0;
+static dev_t dev = 0;
 static struct class* hardlog_class;
 static struct cdev   hardlog_cdev;
 

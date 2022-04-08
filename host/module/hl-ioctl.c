@@ -35,7 +35,7 @@
 
 #include "hl.h"
 
-dev_t dev = 0;
+static dev_t dev = 0;
 static struct class* hardlog_class;
 static struct cdev   hardlog_cdev;
 static char* request_buffer;
