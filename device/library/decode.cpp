@@ -1,3 +1,8 @@
+/*
+*  Copyright (c) 2021-2022 Microsoft Corporation.
+*  Licensed under the MIT License.
+*/
+
 /* This file decodes commands sent by the server */
 
 #include <iostream>

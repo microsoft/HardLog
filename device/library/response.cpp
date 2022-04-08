@@ -1,3 +1,8 @@
+/*
+*  Copyright (c) 2021-2022 Microsoft Corporation.
+*  Licensed under the MIT License.
+*/
+
 /* Read various data and command files and write
    the compressed request output. */
 

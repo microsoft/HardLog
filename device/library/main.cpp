@@ -1,3 +1,8 @@
+/*
+*  Copyright (c) 2021-2022 Microsoft Corporation.
+*  Licensed under the MIT License.
+*/
+
 /* This file will wait for some signal from the kernel module
    which basically wakes up the thread, if there is some command
    from the server. */

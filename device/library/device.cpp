@@ -1,3 +1,8 @@
+/*
+*  Copyright (c) 2021-2022 Microsoft Corporation.
+*  Licensed under the MIT License.
+*/
+
 /* Communicate with the device driver using IOCTL. */
 
 #include <iostream>
