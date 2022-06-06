@@ -1,0 +1,1305 @@
+diff -urN usb-gadget-original/function/f_mass_storage.c usb-gadget/function/f_mass_storage.c
+--- usb-gadget-original/function/f_mass_storage.c	2022-06-05 01:46:45.967404023 -0400
++++ usb-gadget/function/f_mass_storage.c	2022-05-28 18:45:04.855793547 -0400
+@@ -224,7 +224,6 @@
+ 
+ #include "configfs.h"
+ 
+-
+ /*------------------------------------------------------------------------*/
+ 
+ #define FSG_DRIVER_DESC		"Mass Storage Function"
+@@ -251,91 +250,8 @@
+ 	NULL,
+ };
+ 
+-/*-------------------------------------------------------------------------*/
+-
+-struct fsg_dev;
+-struct fsg_common;
+-
+-/* Data shared by all the FSG instances. */
+-struct fsg_common {
+-	struct usb_gadget	*gadget;
+-	struct usb_composite_dev *cdev;
+-	struct fsg_dev		*fsg, *new_fsg;
+-	wait_queue_head_t	fsg_wait;
+-
+-	/* filesem protects: backing files in use */
+-	struct rw_semaphore	filesem;
+-
+-	/* lock protects: state, all the req_busy's */
+-	spinlock_t		lock;
+-
+-	struct usb_ep		*ep0;		/* Copy of gadget->ep0 */
+-	struct usb_request	*ep0req;	/* Copy of cdev->req */
+-	unsigned int		ep0_req_tag;
+-
+-	struct fsg_buffhd	*next_buffhd_to_fill;
+-	struct fsg_buffhd	*next_buffhd_to_drain;
+-	struct fsg_buffhd	*buffhds;
+-	unsigned int		fsg_num_buffers;
+-
+-	int			cmnd_size;
+-	u8			cmnd[MAX_COMMAND_SIZE];
+-
+-	unsigned int		lun;
+-	struct fsg_lun		*luns[FSG_MAX_LUNS];
+-	struct fsg_lun		*curlun;
+-
+-	unsigned int		bulk_out_maxpacket;
+-	enum fsg_state		state;		/* For exception handling */
+-	unsigned int		exception_req_tag;
+-
+-	enum data_direction	data_dir;
+-	u32			data_size;
+-	u32			data_size_from_cmnd;
+-	u32			tag;
+-	u32			residue;
+-	u32			usb_amount_left;
+-
+-	unsigned int		can_stall:1;
+-	unsigned int		free_storage_on_release:1;
+-	unsigned int		phase_error:1;
+-	unsigned int		short_packet_received:1;
+-	unsigned int		bad_lun_okay:1;
+-	unsigned int		running:1;
+-	unsigned int		sysfs:1;
+-
+-	int			thread_wakeup_needed;
+-	struct completion	thread_notifier;
+-	struct task_struct	*thread_task;
+-
+-	/* Gadget's private data. */
+-	void			*private_data;
+-
+-	/*
+-	 * Vendor (8 chars), product (16 chars), release (4
+-	 * hexadecimal digits) and NUL byte
+-	 */
+-	char inquiry_string[8 + 16 + 4 + 1];
+-
+-	struct kref		ref;
+-};
+-
+-struct fsg_dev {
+-	struct usb_function	function;
+-	struct usb_gadget	*gadget;	/* Copy of cdev->gadget */
+-	struct fsg_common	*common;
+-
+-	u16			interface_number;
+-
+-	unsigned int		bulk_in_enabled:1;
+-	unsigned int		bulk_out_enabled:1;
+-
+-	unsigned long		atomic_bitflags;
+-#define IGNORE_BULK_OUT		0
+-
+-	struct usb_ep		*bulk_in;
+-	struct usb_ep		*bulk_out;
+-};
++/* Hardlog: data structures and includes. */
++#include "hardlog.h"
+ 
+ static inline int __fsg_is_set(struct fsg_common *common,
+ 			       const char *func, unsigned line)
+@@ -361,8 +277,9 @@
+ 	return common->state > FSG_STATE_IDLE;
+ }
+ 
++/* Hardlog: changed its static */
+ /* Make bulk-out requests be divisible by the maxpacket size */
+-static void set_bulk_out_req_length(struct fsg_common *common,
++void set_bulk_out_req_length(struct fsg_common *common,
+ 				    struct fsg_buffhd *bh, unsigned int length)
+ {
+ 	unsigned int	rem;
+@@ -406,8 +323,9 @@
+ 	smp_mb();
+ 	/* Tell the main thread that something has happened */
+ 	common->thread_wakeup_needed = 1;
+-	if (common->thread_task)
++	if (common->thread_task) {
+ 		wake_up_process(common->thread_task);
++	}
+ }
+ 
+ static void raise_exception(struct fsg_common *common, enum fsg_state new_state)
+@@ -606,7 +524,8 @@
+ 	return true;
+ }
+ 
+-static bool start_out_transfer(struct fsg_common *common, struct fsg_buffhd *bh)
++/* Hardlog: changed its static */
++bool start_out_transfer(struct fsg_common *common, struct fsg_buffhd *bh)
+ {
+ 	if (!fsg_is_set(common))
+ 		return false;
+@@ -615,7 +534,8 @@
+ 	return true;
+ }
+ 
+-static int sleep_thread(struct fsg_common *common, bool can_freeze)
++/* Hardlog: changed its static */
++int sleep_thread(struct fsg_common *common, bool can_freeze)
+ {
+ 	int	rc = 0;
+ 
+@@ -833,6 +753,10 @@
+ 	amount_left_to_req = common->data_size_from_cmnd;
+ 	amount_left_to_write = common->data_size_from_cmnd;
+ 
++	if (debug)
++		HARDLOG_MODULE_PRINT("usb-write: size = %d, offset = %lld, file len: %lld, num_sectors: %lld, lba: %d, blkbits: %d\n",
++			amount_left_to_write, file_offset, curlun->file_length, curlun->num_sectors, lba, curlun->blkbits);
++
+ 	while (amount_left_to_write > 0) {
+ 
+ 		/* Queue a request for more data from the host */
+@@ -921,6 +845,7 @@
+ 					     amount, &file_offset_tmp);
+ 			VLDBG(curlun, "file write %u @ %llu -> %d\n", amount,
+ 			      (unsigned long long)file_offset, (int)nwritten);
++
+ 			if (signal_pending(current))
+ 				return -EINTR;		/* Interrupted! */
+ 
+@@ -961,6 +886,13 @@
+ 			return rc;
+ 	}
+ 
++	/* Hardlog: if this was a command from the server, we should
++	   keep track of that and inform the device library. Currently,
++	   we assume each request will be sent one-by-one. */
++	if (strcmp(curlun->name, "lun1") == 0) {
++		server_request = true;
++	}
++
+ 	return -EIO;		/* No default reply */
+ }
+ 
+@@ -1840,6 +1772,7 @@
+ 	int			reply = -EINVAL;
+ 	int			i;
+ 	static char		unknown[16];
++	bool logdata = false;
+ 
+ 	dump_cdb(common);
+ 
+@@ -2043,8 +1976,22 @@
+ 				      DATA_DIR_FROM_HOST,
+ 				      (7<<1) | (1<<4), 1,
+ 				      "WRITE(6)");
+-		if (reply == 0)
+-			reply = do_write(common);
++
++		/* Hardlog: the assumption is that the first file is
++		  always the log file. */
++		if (strcmp(common->curlun->name, "lun0") == 0) {
++			logdata = true;
++		}
++
++		/* Hardlog: redirect to hardlog's write function. */
++		if (reply == 0) {
++			if (faststorage && logdata)
++				reply = do_hardlog_write(common);
++			else
++				reply = do_write(common);
++		}
++
++		logdata = false;
+ 		break;
+ 
+ 	case WRITE_10:
+@@ -2054,8 +2001,22 @@
+ 				      DATA_DIR_FROM_HOST,
+ 				      (1<<1) | (0xf<<2) | (3<<7), 1,
+ 				      "WRITE(10)");
+-		if (reply == 0)
+-			reply = do_write(common);
++		/* Hardlog: the assumption is that the first file is
++		  always the log file. */
++		if (strcmp(common->curlun->name, "lun0") == 0) {
++			logdata = true;
++		}
++
++		/* Hardlog: redirect to hardlog's write function if writes
++		   are intended for the log file. */
++		if (reply == 0) {
++			if (faststorage && logdata)
++				reply = do_hardlog_write(common);
++			else
++				reply = do_write(common);
++		}
++
++		logdata = false;
+ 		break;
+ 
+ 	case WRITE_12:
+@@ -2065,8 +2026,21 @@
+ 				      DATA_DIR_FROM_HOST,
+ 				      (1<<1) | (0xf<<2) | (0xf<<6), 1,
+ 				      "WRITE(12)");
+-		if (reply == 0)
+-			reply = do_write(common);
++		/* Hardlog: the assumption is that the first file is
++		  always the log file. */
++		if (strcmp(common->curlun->name, "lun0") == 0) {
++			logdata = true;
++		}
++
++		/* Hardlog: redirect to hardlog's write function. */
++		if (reply == 0) {
++			if (faststorage && logdata)
++				reply = do_hardlog_write(common);
++			else
++				reply = do_write(common);
++		}
++
++		logdata = false;
+ 		break;
+ 
+ 	/*
+@@ -2950,6 +2924,14 @@
+ 
+ 	pr_info("Number of LUNs=%d\n", cfg->nluns);
+ 
++	/* Hardlog: Setup start */
++
++	/* Call hardlog function with name of first file (assuming its the storage file). */
++	if (!hardlog_setup((&cfg->luns[0])->filename, common->luns[0], common->luns[0]->filp))
++		return 0;
++
++	/* Hardlog: Setuip end */
++
+ 	return 0;
+ 
+ fail:
+@@ -3505,6 +3487,9 @@
+ 	mutex_unlock(&opts->lock);
+ 
+ 	kfree(fsg);
++
++	/* Hardlog: Teardown operations. */
++	hardlog_teardown();
+ }
+ 
+ static struct usb_function *fsg_alloc(struct usb_function_instance *fi)
+@@ -3513,6 +3498,8 @@
+ 	struct fsg_common *common = opts->common;
+ 	struct fsg_dev *fsg;
+ 
++	HARDLOG_MODULE_PRINT("detail: allocating fsg.\n");
++
+ 	fsg = kzalloc(sizeof(*fsg), GFP_KERNEL);
+ 	if (unlikely(!fsg))
+ 		return ERR_PTR(-ENOMEM);
+diff -urN usb-gadget-original/function/f_mass_storage.h usb-gadget/function/f_mass_storage.h
+--- usb-gadget-original/function/f_mass_storage.h	2022-06-05 01:46:45.971404018 -0400
++++ usb-gadget/function/f_mass_storage.h	2022-05-28 18:45:04.855793547 -0400
+@@ -107,6 +107,95 @@
+ 	unsigned int		fsg_num_buffers;
+ };
+ 
++/* Adil. I moved these here from f_mass_storage.c */
++
++struct fsg_dev;
++struct fsg_common;
++
++/* Data shared by all the FSG instances. */
++struct fsg_common {
++	struct usb_gadget	*gadget;
++	struct usb_composite_dev *cdev;
++	struct fsg_dev		*fsg, *new_fsg;
++	wait_queue_head_t	fsg_wait;
++
++	/* filesem protects: backing files in use */
++	struct rw_semaphore	filesem;
++
++	/* lock protects: state, all the req_busy's */
++	spinlock_t		lock;
++
++	struct usb_ep		*ep0;		/* Copy of gadget->ep0 */
++	struct usb_request	*ep0req;	/* Copy of cdev->req */
++	unsigned int		ep0_req_tag;
++
++	struct fsg_buffhd	*next_buffhd_to_fill;
++	struct fsg_buffhd	*next_buffhd_to_drain;
++	struct fsg_buffhd	*buffhds;
++	unsigned int		fsg_num_buffers;
++
++	int			cmnd_size;
++	u8			cmnd[MAX_COMMAND_SIZE];
++
++	unsigned int		lun;
++	struct fsg_lun		*luns[FSG_MAX_LUNS];
++	struct fsg_lun		*curlun;
++
++	unsigned int		bulk_out_maxpacket;
++	enum fsg_state		state;		/* For exception handling */
++	unsigned int		exception_req_tag;
++
++	enum data_direction	data_dir;
++	u32			data_size;
++	u32			data_size_from_cmnd;
++	u32			tag;
++	u32			residue;
++	u32			usb_amount_left;
++
++	unsigned int		can_stall:1;
++	unsigned int		free_storage_on_release:1;
++	unsigned int		phase_error:1;
++	unsigned int		short_packet_received:1;
++	unsigned int		bad_lun_okay:1;
++	unsigned int		running:1;
++	unsigned int		sysfs:1;
++
++	int			thread_wakeup_needed;
++	struct completion	thread_notifier;
++	struct task_struct	*thread_task;
++	struct task_struct	*thread_task_two;
++
++	/* Gadget's private data. */
++	void			*private_data;
++
++	/*
++	 * Vendor (8 chars), product (16 chars), release (4
++	 * hexadecimal digits) and NUL byte
++	 */
++	char inquiry_string[8 + 16 + 4 + 1];
++
++	struct kref		ref;
++};
++
++struct fsg_dev {
++	struct usb_function	function;
++	struct usb_gadget	*gadget;	/* Copy of cdev->gadget */
++	struct fsg_common	*common;
++
++	u16			interface_number;
++
++	unsigned int		bulk_in_enabled:1;
++	unsigned int		bulk_out_enabled:1;
++
++	unsigned long		atomic_bitflags;
++#define IGNORE_BULK_OUT		0
++
++	struct usb_ep		*bulk_in;
++	struct usb_ep		*bulk_out;
++};
++
++/* Adil. end */
++
+ static inline struct fsg_opts *
+ fsg_opts_from_func_inst(const struct usb_function_instance *fi)
+ {
+@@ -143,4 +232,11 @@
+ 			    const struct fsg_module_parameters *params,
+ 			    unsigned int fsg_num_buffers);
+ 
++
++/* Adil. previously static but using these functions in hardlog.c */
++bool start_out_transfer(struct fsg_common *common, struct fsg_buffhd *bh);
++int sleep_thread(struct fsg_common *common, bool can_freeze);
++void set_bulk_out_req_length(struct fsg_common *common,
++				    struct fsg_buffhd *bh, unsigned int length);
++
+ #endif /* USB_F_MASS_STORAGE_H */
+diff -urN usb-gadget-original/function/.gitignore usb-gadget/function/.gitignore
+--- usb-gadget-original/function/.gitignore	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/function/.gitignore	2022-05-28 18:45:04.851793515 -0400
+@@ -0,0 +1,9 @@
++/*.o
++/*.ko
++/*.mod*
++/modules.*
++/Module*
++/*.o*
++/.tmp_versions
++*.cmd
++*.cmd*
+\ No newline at end of file
+diff -urN usb-gadget-original/function/hardlog-bio-fs.c usb-gadget/function/hardlog-bio-fs.c
+--- usb-gadget-original/function/hardlog-bio-fs.c	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/function/hardlog-bio-fs.c	2022-06-05 01:48:40.783210534 -0400
+@@ -0,0 +1,123 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* Copyright (c) 2021, Microsoft Corporation. */
++
++/* This file contains the major code for hardlog's device-side
++   flusher, which dumps the in-memory data into the actual backend
++   file. */
++
++#include <linux/blkdev.h>
++#include <linux/completion.h>
++#include <linux/dcache.h>
++#include <linux/delay.h>
++#include <linux/device.h>
++#include <linux/fcntl.h>
++#include <linux/file.h>
++#include <linux/fs.h>
++#include <linux/kref.h>
++#include <linux/kthread.h>
++#include <linux/limits.h>
++#include <linux/rwsem.h>
++#include <linux/slab.h>
++#include <linux/spinlock.h>
++#include <linux/string.h>
++#include <linux/freezer.h>
++#include <linux/module.h>
++#include <linux/uaccess.h>
++
++#include <linux/usb/ch9.h>
++#include <linux/usb/gadget.h>
++#include <linux/usb/composite.h>
++
++#include <linux/nospec.h>
++
++#include "configfs.h"
++
++/* File IO-related headers */
++#include <linux/fs.h>
++#include <linux/bio.h>
++#include <asm/uaccess.h>
++#include <linux/buffer_head.h>
++#include <linux/genhd.h>
++#include <linux/blkdev.h>
++
++/* Sleep and timer headers */
++#include <linux/hrtimer.h>
++#include <linux/delay.h>
++
++/* Other headers */
++#include "f_mass_storage.h"
++#include "hardlog.h"
++
++/* File and Blockdev for the usb storage */
++struct file* device_file;
++struct fsg_lun* device_lun;
++
++/* Timing purposes only */
++ktime_t start_us;
++s64 end_us = 0;
++
++/* Keeping track of how much of the file is used */
++uint64_t file_start_offset = 0;
++uint64_t file_end_offset = 0;
++
++/* Note: we do not need fs_open() because the USB gadget is already opening
++   the file for us, thus, we can simply reuse the file pointer provided to us. 
++*/
++uint64_t remove_null_chars(uint64_t end, uint64_t start) {
++    int i = 0;
++    uint64_t final_size = 0;
++    char* cbuff_ptr = &(data_cbuff.buffer[start]);
++    char* trim_cbuff_ptr = &(data_cbuff_trim.buffer[0]);
++    for (i = 0 ; i < end-start; i++) {
++        if (*cbuff_ptr != '\0') {
++            *trim_cbuff_ptr = *cbuff_ptr;
++            trim_cbuff_ptr++;
++            final_size++;
++        }
++        cbuff_ptr++;
++    }
++    return final_size;
++}
++
++int fs_write(uint64_t end, uint64_t start)
++{
++    int len = 0;
++    uint64_t final_size = 0;
++
++    /* Perform sanity checks for size and device file */
++    uint64_t remaining = end - start;
++    if (remaining <= 0) {
++        return 0;
++    }
++    if (IS_ERR(device_file) || !device_file) {
++        HARDLOG_MODULE_PRINT("error: cannot write to null file.\n");
++        return -1;
++    }
++
++    /* Note: With O_SYNC, it seems stupidly slow. Therefore, I disabled
++       O_SYNC. This should be checked again later. */
++	device_lun->filp->f_flags &= ~O_SYNC;
++
++    if (debug)
++        HARDLOG_MODULE_PRINT("fs_write: writing %lld bytes (%lld - %lld) at %lld\n", 
++            end-start, start, end, device_lun->filp->f_pos);
++
++    /* Just write the raw buffer (with null characters). Trimming should be done by 
++       the device library when the logs are processed. */
++    len = vfs_write(device_lun->filp, &(data_cbuff.buffer[start]), end-start, &device_lun->filp->f_pos);
++    if (len <= 0) {
++        HARDLOG_MODULE_PRINT("error: kernel write command failed (ret = %d, write-size: %lld, pos = %lld).\n", 
++                                                len, end-start, device_lun->filp->f_pos);
++        return len;
++    }
++    
++    /* Update the file end offset to inform the device library */
++    file_end_offset = device_lun->filp->f_pos;
++
++    /* Note: Currently, I assume that the file is large enough to never
++       need overwriting and the file writes will fail (when they overflow).
++       This is correct based on our semantics---only the sysadmin should be
++       able to overwrite the file. It can be made more elegant, however. */
++
++    return len;
++}
+\ No newline at end of file
+diff -urN usb-gadget-original/function/hardlog-flush.c usb-gadget/function/hardlog-flush.c
+--- usb-gadget-original/function/hardlog-flush.c	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/function/hardlog-flush.c	2022-06-05 01:48:45.919201836 -0400
+@@ -0,0 +1,132 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* Copyright (c) 2021, Microsoft Corporation. */
++
++/* This file contains the major code for hardlog's device-side
++   flusher, which dumps the in-memory data into the actual backend
++   file. */
++
++#include <linux/blkdev.h>
++#include <linux/completion.h>
++#include <linux/dcache.h>
++#include <linux/delay.h>
++#include <linux/device.h>
++#include <linux/fcntl.h>
++#include <linux/file.h>
++#include <linux/fs.h>
++#include <linux/kref.h>
++#include <linux/kthread.h>
++#include <linux/limits.h>
++#include <linux/rwsem.h>
++#include <linux/slab.h>
++#include <linux/spinlock.h>
++#include <linux/string.h>
++#include <linux/freezer.h>
++#include <linux/module.h>
++#include <linux/uaccess.h>
++
++#include <linux/usb/ch9.h>
++#include <linux/usb/gadget.h>
++#include <linux/usb/composite.h>
++
++#include <linux/nospec.h>
++
++#include "configfs.h"
++
++#include "f_mass_storage.h"
++#include "hardlog.h"
++
++/* Task struct for the background thread to flush data */
++static struct task_struct *hardlog_flushd_task = NULL;
++
++static int hardlog_flushd_thread(void *dummy) {
++    ktime_t start_us;
++    s64 elapsed_us = 0;
++    uint64_t cbuff_size = HARDLOG_DATA_CBUFFSIZE;
++
++    uint64_t start, end, real_end, end_one, size = 0;
++    bool special = false;
++
++    while (!kthread_should_stop()) {
++		start_us = ktime_get();
++
++        /* Get the current statistics of the circular buffer */
++        real_end = data_cbuff.head;
++        end = real_end % cbuff_size;
++        start = data_cbuff.tail % cbuff_size;
++        if (end < start) {
++            special = true;
++            end_one = HARDLOG_DATA_CBUFFSIZE;
++        }
++        size = end - start;
++
++        /* Debugging purposes only */
++        if (debug) {
++            HARDLOG_MODULE_PRINT("head: %lld, tail: %lld.\n", data_cbuff.head, data_cbuff.tail);
++            HARDLOG_MODULE_PRINT("start: %lld, end: %lld.\n", start, end);
++        }
++
++        /* Write to the file, if there is anything to write */
++        if (size > 0 && !special) {
++            /* Normal case, going forward in the circular buffer. */
++            fs_write(end, start);
++
++            /* Update the tail, letting the kernel know we have written to usb */
++            data_cbuff.tail = real_end;
++        } 
++        else if (special) {
++            /* Special case, going forward and backwards in the circular buffer.
++               there are two usb writes in this case. */
++            fs_write(end_one, start);
++            fs_write(end, 0);
++
++            /* Update the tail, letting the kernel know we have written to usb */
++            data_cbuff.tail = real_end;
++
++            /* Make special false, next writes are normal. */
++            special = false;
++        }
++
++        /* Sleep for 1ms. This is kinda arbitrary, could be shortened. */
++        elapsed_us = ktime_us_delta(ktime_get(), start_us);
++		if(elapsed_us < 900) {
++			usleep_range(900 - elapsed_us, 1100 - elapsed_us);
++		}
++    }
++
++    HARDLOG_MODULE_PRINT("detail: stopping flusher thread.\n");
++    return 1;
++}
++
++bool hardlog_flush_setup(void) {
++
++    struct sched_param param;
++
++    /* Create the background thread */
++    hardlog_flushd_task = kthread_run(hardlog_flushd_thread, NULL, "hardlog_flushd");
++	if (IS_ERR(hardlog_flushd_task)) {
++		int err = PTR_ERR(hardlog_flushd_task);
++		HARDLOG_MODULE_PRINT("error: failed to start the hardlog thread (%d)\n", err);
++        return false;
++	}
++    HARDLOG_MODULE_PRINT("success: started the hardlog flush thread.\n");
++
++#if 0
++    /* Note: I make the same thread priority requests when the thread
++       is being created. Not sure if we need to do it here again, to check. */
++
++    /* hardlog_flushd_thread is not nice at all!! ;) */
++    set_user_nice(hardlog_flushd_task, -20);
++
++    /* this did not help much but setting nevertheless */
++    param.sched_priority = 99;
++    sched_setscheduler(hardlog_flushd_task, SCHED_FIFO, &param);
++#endif
++
++    return true;
++}
++
++void hardlog_flush_teardown(void) {
++    /* Stop the running kernel thread. */
++    kthread_stop(hardlog_flushd_task);
++}
++
+diff -urN usb-gadget-original/function/hardlog.h usb-gadget/function/hardlog.h
+--- usb-gadget-original/function/hardlog.h	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/function/hardlog.h	2022-06-05 01:49:08.667163276 -0400
+@@ -0,0 +1,47 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* Copyright (c) 2021, Microsoft Corporation. */
++
++#ifndef __HARDLOG_H__
++#define __HARDLOG_H__
++
++/* Just a fancy print statement */
++#define HARDLOG_MODULE_PRINT(args...) printk("hardlog-device: " args)
++
++/* Setting the size of the circular buffer to 256 MB for now */
++#define HARDLOG_DATA_CBUFFSIZE 512*1024*1024
++
++/* Circular buffer for storing data received from the host */
++struct circ_buffer {
++    char* buffer;
++    uint64_t head;
++    uint64_t tail;
++};
++
++/* Defined in hardlog-main.c */
++extern struct circ_buffer data_cbuff;
++extern struct circ_buffer data_cbuff_trim;
++extern bool faststorage;
++extern bool debug;
++bool hardlog_setup(const char* name, struct fsg_lun* lunp, struct file* filp);
++void hardlog_teardown(void);
++int do_hardlog_write(struct fsg_common *common);
++
++/* Defined in hardlog-flush.c */
++bool hardlog_flush_setup(void);
++void hardlog_flush_teardown(void);
++
++/* Defined in hardlog-bio-fs.c */
++extern struct file* device_file;
++extern struct fsg_lun* device_lun;
++extern uint64_t file_start_offset;
++extern uint64_t file_end_offset;
++bool fs_open(const char* device);
++void fs_close(void);
++int fs_write(uint64_t end, uint64_t start);
++
++/* Defined in hardlog-ioctl.c */
++extern bool server_request;
++bool hardlog_ioctl_init(void);
++void hardlog_ioctl_teardown(void);
++
++#endif
+\ No newline at end of file
+diff -urN usb-gadget-original/function/hardlog-ioctl.c usb-gadget/function/hardlog-ioctl.c
+--- usb-gadget-original/function/hardlog-ioctl.c	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/function/hardlog-ioctl.c	2022-06-05 01:48:51.407192540 -0400
+@@ -0,0 +1,164 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* Copyright (c) 2021, Microsoft Corporation. */
++
++/* This file contains the major code for hardlog's device-side
++   implementation, responsible for storing incoming USB messages
++   in a fast manner to an in-memory data structure and dumping it
++   into the actual backend file. */
++
++#include <linux/blkdev.h>
++#include <linux/completion.h>
++#include <linux/dcache.h>
++#include <linux/delay.h>
++#include <linux/device.h>
++#include <linux/fcntl.h>
++#include <linux/file.h>
++#include <linux/fs.h>
++#include <linux/kref.h>
++#include <linux/kthread.h>
++#include <linux/limits.h>
++#include <linux/rwsem.h>
++#include <linux/slab.h>
++#include <linux/spinlock.h>
++#include <linux/string.h>
++#include <linux/freezer.h>
++#include <linux/module.h>
++#include <linux/uaccess.h>
++
++#include <linux/ioctl.h>
++
++#include <linux/usb/ch9.h>
++#include <linux/usb/gadget.h>
++#include <linux/usb/composite.h>
++
++#include <linux/cdev.h>
++#include <linux/nospec.h>
++
++#include "configfs.h"
++
++#include "f_mass_storage.h"
++#include "hardlog.h"
++
++static dev_t dev = 0;
++static struct class* hardlog_class;
++static struct cdev   hardlog_cdev;
++
++struct hardlog_ioctl_request {
++    bool server_request;
++    uint64_t log_file_start_offset;
++    uint64_t log_file_end_offset;
++};
++
++#define REQUEST       _IOW('a', 'a', struct hardlog_ioctl_request)
++#define DELETELOG     _IOR('a', 'c', struct hardlog_ioctl_request)
++
++bool server_request = false;
++
++/* Writing an IOCTL for hardlog */
++static long hardlog_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
++    struct hardlog_ioctl_request hreq;
++
++    switch (cmd)
++    {
++    case DELETELOG:
++        HARDLOG_MODULE_PRINT("IOCTL: delete log data.\n");
++        /* TODO: This is not currently implemented. */
++        break;
++
++    case REQUEST:
++        /* Note: I've implemented it such that each request should arrive 
++           sequentially but potentially we should be able to serve multiple 
++           requests. This might not be needed, however. */
++        hreq.server_request = server_request;
++        hreq.log_file_start_offset = file_start_offset;
++        hreq.log_file_end_offset = file_end_offset;
++        if (copy_to_user((void*) arg, &hreq, sizeof(struct hardlog_ioctl_request))) {
++            HARDLOG_MODULE_PRINT("error: couldn't respond to DATA ioctl request.\n");
++            return -1;
++        }
++
++        /* Now that we have sent the request to the library, we can assume it will
++           be completed by the library. Importantly, the library will simply let the
++           host know when the data is ready. */
++        if (server_request == true)
++            server_request = false;
++        
++        break;
++
++    default:
++        HARDLOG_MODULE_PRINT("error: wrong ioctl request.\n");
++        break;
++    }
++
++    return 0;
++}
++
++/* Writing an open function for hardlog */
++static int hardlog_open(struct inode* inode, struct file* file) {
++    HARDLOG_MODULE_PRINT("ioctl: open executed.\n");
++    return 0;
++}
++
++/* Writing a release function for hardlog */
++static int hardlog_release(struct inode* inode, struct file* file) {
++    HARDLOG_MODULE_PRINT("ioctl: close executed.\n");
++    return 0;
++}
++
++static struct file_operations fops = 
++{
++    .owner = THIS_MODULE,
++    .open = hardlog_open,
++    .release = hardlog_release,
++    .unlocked_ioctl = hardlog_ioctl,
++};
++
++/* Initialize the module for IOCTL commands */
++bool hardlog_ioctl_init(void) {
++
++    /* Allocate a character device */
++    if (alloc_chrdev_region(&dev, 0, 1, "hardlog_dev") < 0) {
++        HARDLOG_MODULE_PRINT("error: couldn't allocate chardev region.\n");
++        return false;
++    }
++    HARDLOG_MODULE_PRINT("success: allocated chardev region.\n");
++
++    /* Initialize the chardev with my fops */
++    cdev_init(&hardlog_cdev, &fops);
++
++    if (cdev_add(&hardlog_cdev, dev, 1) < 0) {
++        HARDLOG_MODULE_PRINT("error: couldn't add hardlog_cdev.\n");
++        goto cdevfailed;
++    }
++    HARDLOG_MODULE_PRINT("success: added hardlog_cdev.\n");
++
++    if ((hardlog_class = class_create(THIS_MODULE, "hardlog_class")) == NULL) {
++        HARDLOG_MODULE_PRINT("error: couldn't create class.\n");
++        goto cdevfailed;
++    }
++    HARDLOG_MODULE_PRINT("success: created hardlog_class.\n");
++
++    if ((device_create(hardlog_class, NULL, dev, NULL, "hardlog_device")) == NULL) {
++        HARDLOG_MODULE_PRINT("error: couldn't create device.\n");
++        goto classfailed;
++    }
++    HARDLOG_MODULE_PRINT("success: hardlog device driver inserted.\n");
++
++    return true;
++
++classfailed:
++    class_destroy(hardlog_class);
++cdevfailed:
++    unregister_chrdev_region(dev, 1);
++    return false;
++}
++
++void hardlog_ioctl_teardown(void) {
++    if (hardlog_class) {
++        device_destroy(hardlog_class, dev);
++        class_destroy(hardlog_class);
++    }
++    cdev_del(&hardlog_cdev);
++    unregister_chrdev_region(dev,1);
++    HARDLOG_MODULE_PRINT("Removed hardlog device driver.\n");
++}
+diff -urN usb-gadget-original/function/hardlog-main.c usb-gadget/function/hardlog-main.c
+--- usb-gadget-original/function/hardlog-main.c	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/function/hardlog-main.c	2022-06-05 01:48:57.039182995 -0400
+@@ -0,0 +1,342 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* Copyright (c) 2021, Microsoft Corporation. */
++
++/* This file contains the major code for hardlog's device-side
++   implementation, responsible for storing incoming USB messages
++   in a fast manner to an in-memory data structure and dumping it
++   into the actual backend file. */
++
++#include <linux/blkdev.h>
++#include <linux/completion.h>
++#include <linux/dcache.h>
++#include <linux/delay.h>
++#include <linux/device.h>
++#include <linux/fcntl.h>
++#include <linux/file.h>
++#include <linux/fs.h>
++#include <linux/kref.h>
++#include <linux/kthread.h>
++#include <linux/limits.h>
++#include <linux/rwsem.h>
++#include <linux/slab.h>
++#include <linux/spinlock.h>
++#include <linux/string.h>
++#include <linux/freezer.h>
++#include <linux/module.h>
++#include <linux/uaccess.h>
++
++#include <linux/usb/ch9.h>
++#include <linux/usb/gadget.h>
++#include <linux/usb/composite.h>
++
++#include <linux/nospec.h>
++
++#include "configfs.h"
++
++#include "f_mass_storage.h"
++#include "hardlog.h"
++
++/* Data structures and user commands */
++struct circ_buffer data_cbuff;
++struct circ_buffer data_cbuff_trim;
++bool faststorage = true;
++bool debug = false;
++bool ioctl = true;
++module_param(faststorage, bool, S_IRUSR);
++module_param(debug, bool, S_IRUSR);
++module_param(ioctl, bool, S_IRUSR);
++
++static uint64_t make_space_in_cbuff(void) {
++
++    /* Currently, we are just waiting for the buffer to get empty again */
++    while ((data_cbuff.head - data_cbuff.tail) >= HARDLOG_DATA_CBUFFSIZE) {
++		HARDLOG_MODULE_PRINT("detail: waiting for the data buffer to be flushed.\n");
++		HARDLOG_MODULE_PRINT("detail: head = %lld, tail = %lld.\n", data_cbuff.head, data_cbuff.tail);
++        usleep_range(1900, 2100);
++    }
++
++	/* Once there is space, simply send the head of the buffer */
++    return data_cbuff.head;
++}
++
++int do_hardlog_write(struct fsg_common *common) {
++	struct fsg_lun		*curlun = common->curlun;
++	u32			lba;
++	struct fsg_buffhd	*bh;
++	int			get_some_more;
++	u32			amount_left_to_req, amount_left_to_write;
++	loff_t			usb_offset, file_offset, file_offset_tmp;
++	unsigned int		amount;
++	ssize_t			nwritten;
++	int			rc;
++
++	/* Keeping statistics for the hardlog data buffer */
++	uint64_t data_cbuff_offset = 0;
++	uint64_t cbuff_size = HARDLOG_DATA_CBUFFSIZE;
++
++	/* Perform sanity checks */
++	if (!data_cbuff.buffer) {
++		HARDLOG_MODULE_PRINT("error: hardlog data buffer is not allocated.\n");
++		return -EINVAL;
++	}
++	if (curlun->ro) {
++		curlun->sense_data = SS_WRITE_PROTECTED;
++		return -EINVAL;
++	}
++
++	/*
++	 * Get the starting Logical Block Address and check that it's
++	 * not too big
++	 */
++	if (common->cmnd[0] == WRITE_6)
++		lba = get_unaligned_be24(&common->cmnd[1]);
++	else {
++		lba = get_unaligned_be32(&common->cmnd[2]);
++
++		/*
++		 * We allow DPO (Disable Page Out = don't save data in the
++		 * cache) and FUA (Force Unit Access = write directly to the
++		 * medium).  We don't implement DPO; we implement FUA by
++		 * performing synchronous output.
++		 */
++		if (common->cmnd[1] & ~0x18) {
++			curlun->sense_data = SS_INVALID_FIELD_IN_CDB;
++			return -EINVAL;
++		}
++
++		#if 0
++		/* I explicitly removed this FUA */
++		if (!curlun->nofua && (common->cmnd[1] & 0x08)) { /* FUA */
++			spin_lock(&curlun->filp->f_lock);
++			curlun->filp->f_flags |= O_SYNC;
++			spin_unlock(&curlun->filp->f_lock);
++		}
++		#endif
++	}
++	if (lba >= curlun->num_sectors) {
++		curlun->sense_data = SS_LOGICAL_BLOCK_ADDRESS_OUT_OF_RANGE;
++		return -EINVAL;
++	}
++
++	/* Carry out the file writes */
++	get_some_more = 1;
++	file_offset = usb_offset = ((loff_t) lba) << curlun->blkbits;
++	amount_left_to_req = common->data_size_from_cmnd;
++	amount_left_to_write = common->data_size_from_cmnd;
++
++	/* Debugging purposes only */
++	if (debug)
++		HARDLOG_MODULE_PRINT("usb-write: size = %d, offset = %lld, modulo = %lld, file len: %lld\n", 
++			amount_left_to_write, file_offset, cbuff_size, curlun->file_length);
++
++	while (amount_left_to_write > 0) {
++
++		/* Queue a request for more data from the host */
++		bh = common->next_buffhd_to_fill;
++		if (bh->state == BUF_STATE_EMPTY && get_some_more) {
++
++			/*
++			 * Figure out how much we want to get:
++			 * Try to get the remaining amount,
++			 * but not more than the buffer size.
++			 */
++			amount = min(amount_left_to_req, FSG_BUFLEN);
++
++			/* Beyond the end of the backing file? */
++			if (usb_offset >= curlun->file_length) {
++				get_some_more = 0;
++				curlun->sense_data =
++					SS_LOGICAL_BLOCK_ADDRESS_OUT_OF_RANGE;
++				curlun->sense_data_info =
++					usb_offset >> curlun->blkbits;
++				curlun->info_valid = 1;
++				continue;
++			}
++
++			/* Get the next buffer */
++			usb_offset += amount;
++			common->usb_amount_left -= amount;
++			amount_left_to_req -= amount;
++			if (amount_left_to_req == 0)
++				get_some_more = 0;
++
++			/*
++			 * Except at the end of the transfer, amount will be
++			 * equal to the buffer size, which is divisible by
++			 * the bulk-out maxpacket size.
++			 */
++			set_bulk_out_req_length(common, bh, amount);
++			if (!start_out_transfer(common, bh))
++				/* Dunno what to do if common->fsg is NULL */
++				return -EIO;
++			common->next_buffhd_to_fill = bh->next;
++			continue;
++		}
++
++		/* Write the received data to the backing file */
++		bh = common->next_buffhd_to_drain;
++		if (bh->state == BUF_STATE_EMPTY && !get_some_more)
++			break;			/* We stopped early */
++		if (bh->state == BUF_STATE_FULL) {
++			smp_rmb();
++			common->next_buffhd_to_drain = bh->next;
++			bh->state = BUF_STATE_EMPTY;
++
++			/* Did something go wrong with the transfer? */
++			if (bh->outreq->status != 0) {
++				curlun->sense_data = SS_COMMUNICATION_FAILURE;
++				curlun->sense_data_info =
++					file_offset >> curlun->blkbits;
++				curlun->info_valid = 1;
++				break;
++			}
++
++			amount = bh->outreq->actual;
++			if (curlun->file_length - file_offset < amount) {
++				LERROR(curlun,
++				       "write %u @ %llu beyond end %llu\n",
++				       amount, (unsigned long long)file_offset,
++				       (unsigned long long)curlun->file_length);
++				amount = curlun->file_length - file_offset;
++			}
++
++			/* Don't accept excess data.  The spec doesn't say
++			 * what to do in this case.  We'll ignore the error.
++			 */
++			amount = min(amount, bh->bulk_out_intended_length);
++
++			/* Don't write a partial block */
++			amount = round_down(amount, curlun->blksize);
++			if (amount == 0)
++				goto empty_write;
++
++			/* Perform the write */
++			file_offset_tmp = file_offset;
++
++			/* Simply copy it into the circular buffer's start for now.*/
++			data_cbuff_offset = make_space_in_cbuff();
++			data_cbuff_offset %= cbuff_size;
++			memcpy(&data_cbuff.buffer[data_cbuff_offset], bh->buf, amount);
++			data_cbuff.head += amount;
++			nwritten = amount;
++
++			if (signal_pending(current))
++				return -EINTR;		/* Interrupted! */
++
++			file_offset += nwritten;
++			amount_left_to_write -= nwritten;
++			common->residue -= nwritten;
++
++			/* If an error occurred, report it and its position */
++			if (nwritten < amount) {
++				curlun->sense_data = SS_WRITE_ERROR;
++				curlun->sense_data_info =
++					file_offset >> curlun->blkbits;
++				curlun->info_valid = 1;
++				break;
++			}
++
++ empty_write:
++			/* Did the host decide to stop early? */
++			if (bh->outreq->actual < bh->bulk_out_intended_length) {
++				common->short_packet_received = 1;
++				break;
++			}
++			continue;
++		}
++
++		/* Wait for something to happen */
++		rc = sleep_thread(common, true);
++		if (rc)
++			return rc;
++	}
++
++	return -EIO;		/* No default reply */
++}
++
++bool hardlog_setup(const char* filename, struct fsg_lun* lunp, struct file* filp) {
++
++    struct sched_param param;
++	struct kstat device_file_kstat;
++
++	/* Print a welcome message */
++	HARDLOG_MODULE_PRINT("Welcome to Hardlog's USB device gadget!\n");
++    
++	/* Perform sanity checks */
++	if (strcmp(filename, "") == 0) {
++		HARDLOG_MODULE_PRINT("error: filename is empty.\n");
++		return false;
++	}
++	if (!filp) {
++		HARDLOG_MODULE_PRINT("error: file pointer is NULL.\n");
++		return false;
++	}
++
++    /* Printing parameters for testing */
++    if (faststorage)
++        HARDLOG_MODULE_PRINT("parameter: faststorage is ENABLED.\n");
++    else 
++        HARDLOG_MODULE_PRINT("parameter: faststorage is DISABLED.\n");
++	
++	device_file = filp;
++	device_lun = lunp;
++	HARDLOG_MODULE_PRINT("parameter: storage file is %s\n", filename);
++	HARDLOG_MODULE_PRINT("parameter: lun name is %s\n", device_lun->name);
++
++	if (!vfs_stat(device_lun->name, &device_file_kstat)) {
++		HARDLOG_MODULE_PRINT("error: couldn't get the stats for device file.\n");
++		return false;
++	}
++	HARDLOG_MODULE_PRINT("parameter: lun size is %lld\n", device_file_kstat.size);
++
++    /* Creating data buffer (keep an extra buffer of 2MB) */
++	HARDLOG_MODULE_PRINT("detail: creating hardlog data circular buffer.\n");
++	data_cbuff.buffer = (char*) vmalloc(HARDLOG_DATA_CBUFFSIZE + 2*1024*1024);
++	if (!data_cbuff.buffer) {
++		HARDLOG_MODULE_PRINT("error: couldn't allocate memory for the cicular buffer.\n");
++		return false;
++	}
++	HARDLOG_MODULE_PRINT("success: allocated memory for the cicular buffer.\n");
++
++	data_cbuff.head = 0;
++	data_cbuff.tail = 0;
++
++    /* This thread is not nice at all!! ;) */
++    set_user_nice(current, -20);
++
++	/* Assigning highest priority to the thread! */
++    param.sched_priority = 99;
++    sched_setscheduler(current, SCHED_FIFO, &param);
++
++    /* Creating a background thread to flush data to disk */
++	if (!hardlog_flush_setup()) {
++		HARDLOG_MODULE_PRINT("error: failed to setup hardlog flusher.\n");
++		hardlog_teardown();
++		return false;
++	}
++
++	/* Initialize IOCTL if needed */
++	if (ioctl)
++		hardlog_ioctl_init();
++
++    return true;
++}
++
++void hardlog_teardown(void) {
++	/* Close the background thread */
++	hardlog_flush_teardown();
++
++	/* Free space allocated for the buffer */
++    if (data_cbuff.buffer) {
++        vfree(data_cbuff.buffer);
++	}
++
++	if (data_cbuff_trim.buffer) {
++		vfree(data_cbuff_trim.buffer);
++	}
++
++	if (ioctl)
++		hardlog_ioctl_teardown();
++	
++	HARDLOG_MODULE_PRINT("Goodbye from Hardlog!\n");
++}
+\ No newline at end of file
+diff -urN usb-gadget-original/function/Makefile usb-gadget/function/Makefile
+--- usb-gadget-original/function/Makefile	2022-06-05 01:46:45.967404023 -0400
++++ usb-gadget/function/Makefile	2022-05-28 18:45:04.851793515 -0400
+@@ -28,7 +28,7 @@
+ obj-$(CONFIG_USB_F_SUBSET)	+= usb_f_ecm_subset.o
+ usb_f_rndis-y			:= f_rndis.o rndis.o
+ obj-$(CONFIG_USB_F_RNDIS)	+= usb_f_rndis.o
+-usb_f_mass_storage-y		:= f_mass_storage.o storage_common.o
++usb_f_mass_storage-y		:= f_mass_storage.o storage_common.o hardlog-main.o hardlog-flush.o hardlog-bio-fs.o hardlog-ioctl.o
+ obj-$(CONFIG_USB_F_MASS_STORAGE)+= usb_f_mass_storage.o
+ usb_f_fs-y			:= f_fs.o
+ obj-$(CONFIG_USB_F_FS)		+= usb_f_fs.o
+diff -urN usb-gadget-original/.gitignore usb-gadget/.gitignore
+--- usb-gadget-original/.gitignore	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/.gitignore	2022-05-28 18:45:04.847793481 -0400
+@@ -0,0 +1,9 @@
++*.o
++*.ko
++*.mod*
++modules.*
++Module*
++*.o*
++.tmp_versions
++*.cmd
++*.cmd*
+diff -urN usb-gadget-original/legacy/.gitignore usb-gadget/legacy/.gitignore
+--- usb-gadget-original/legacy/.gitignore	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/legacy/.gitignore	2022-05-28 18:45:04.859793581 -0400
+@@ -0,0 +1,9 @@
++/*.o
++/*.ko
++/*.mod*
++/modules.*
++/Module*
++/*.o*
++/.tmp_versions
++*.cmd
++*.cmd*
+\ No newline at end of file
+diff -urN usb-gadget-original/udc/.gitignore usb-gadget/udc/.gitignore
+--- usb-gadget-original/udc/.gitignore	1969-12-31 19:00:00.000000000 -0500
++++ usb-gadget/udc/.gitignore	2022-05-28 18:45:04.863793614 -0400
+@@ -0,0 +1,9 @@
++/*.o
++/*.ko
++/*.mod*
++/modules.*
++/Module*
++/*.o*
++/.tmp_versions
++*.cmd
++*.cmd*
+\ No newline at end of file

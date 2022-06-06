@@ -1,0 +1,32 @@
+# Copyright (c) 2022 Microsoft Corporation.
+# Licensed under the MIT License.
+#
+trigger: none
+
+stages:
+- stage: build_hardlog
+  pool:
+    vmImage: 'ubuntu-20.04'
+  jobs:
+  - job: build_hardlog
+    timeoutInMinutes: 360
+    steps:
+    - script: .pipelines/prepare.sh
+      displayName: Prepare packages
+    - script: .pipelines/host.sh
+      displayName: Build host
+    - script: .pipelines/device.sh
+      displayName: Build device
+
+- stage: do_credscan
+  pool:
+    vmImage: 'windows-latest'
+  jobs:
+  - job: credscan
+    variables:
+      Codeql.SkipTaskAutoInjection: true
+      skipComponentGovernanceDetection: true
+    steps:
+    - task: CredScan@2
+      inputs:
+        toolMajorVersion: 'V2'

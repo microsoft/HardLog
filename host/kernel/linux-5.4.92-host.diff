@@ -1,0 +1,763 @@
+diff -urN '--exclude=signing_key.pem' '--exclude=signing_key.x509' '--exclude=x509.genkey' '--exclude=inat-tables.c' '--exclude=fixdep' '--exclude=objtool' desktop-original/include/hardlog.h desktop-hardlog/include/hardlog.h
+--- desktop-original/include/hardlog.h	1969-12-31 19:00:00.000000000 -0500
++++ desktop-hardlog/include/hardlog.h	2022-03-26 01:41:08.222199036 -0400
+@@ -0,0 +1,51 @@
++#include <linux/fs.h>
++#include <linux/audit.h>
++#include <linux/skbuff.h>
++#include <uapi/linux/mqueue.h>
++#include <linux/tty.h>
++
++#define HARDLOG_PRINT(args...) printk("hardlog-backend: " args)
++
++/* Maximum allowed size of each audit event. 
++
++   (TODO) This might need some additional testing. During my experiments, 
++   this seemed reasonable. However, the host module will drop excess
++   bytes if this size is exceeded (which is undesirable). */
++#define HARDLOG_AUDIT_EVENTSIZE 512
++
++/* Each event should be 512 bytes and 1 byte is saved for endline. */
++#define HARDLOG_AUDIT_BLOCKSIZE (HARDLOG_AUDIT_EVENTSIZE - 1)
++
++/* Moved the def of audit_buffer below from kernel/audit.c file */
++/* The audit_buffer is used when formatting an audit record.  The caller
++ * locks briefly to get the record off the freelist or to allocate the
++ * buffer, and locks briefly to send the buffer to the netlink layer or
++ * to place it on a transmit queue.  Multiple audit_buffers can be in
++ * use simultaneously. */
++struct audit_buffer {
++	struct sk_buff       *skb;	/* formatted skb ready to send */
++	struct audit_context *ctx;	/* NULL or associated context */
++	gfp_t		     gfp_mask;
++
++	/* Creating new contexts for hardlog. These buffers store the
++     * actual log entry. */
++	char* hardlog_event_buffer;
++	int hardlog_event_consumed;
++};
++
++typedef void func_type1(struct audit_buffer*);
++extern func_type1* audit_log_start_hardlog_ptr;
++extern func_type1* audit_log_end_hardlog_ptr;
++
++typedef void func_type2(struct audit_buffer*, const char* fmt, va_list args);
++extern func_type2* audit_log_format_hardlog_ptr;
++
++typedef void func_type3(struct audit_buffer* ab, const char* string, size_t slen);
++extern func_type3* audit_log_n_string_hardlog_ptr;
++
++typedef void func_type4(struct audit_buffer *ab, const unsigned char *buf, size_t len);
++extern func_type4* audit_log_n_hex_hardlog_ptr;
++
++
++/* Defined in kernel/hardlog.c */
++bool is_hardlog_active(void);
+\ No newline at end of file
+diff -urN '--exclude=signing_key.pem' '--exclude=signing_key.x509' '--exclude=x509.genkey' '--exclude=inat-tables.c' '--exclude=fixdep' '--exclude=objtool' desktop-original/include/linux/hardlog.h desktop-hardlog/include/linux/hardlog.h
+--- desktop-original/include/linux/hardlog.h	1969-12-31 19:00:00.000000000 -0500
++++ desktop-hardlog/include/linux/hardlog.h	2022-03-26 01:41:08.318198518 -0400
+@@ -0,0 +1,50 @@
++#include <linux/fs.h>
++#include <linux/audit.h>
++#include <linux/skbuff.h>
++#include <uapi/linux/mqueue.h>
++#include <linux/tty.h>
++
++#define HARDLOG_PRINT(args...) printk("hardlog-backend: " args)
++
++/* currently set to 5 MB */
++// #define HARDLOG_AUDIT_CBUFFSIZE 5*1024*1024
++
++/* maximum allowed size of each audit event */
++#define HARDLOG_AUDIT_EVENTSIZE 512
++
++/* each event should be 512 bytes, but 1 byte is saved for endline */
++#define HARDLOG_AUDIT_BLOCKSIZE (HARDLOG_AUDIT_EVENTSIZE - 1)
++
++/* Adil. moved the def of audit_buffer below from kernel/audit.c file */
++/* The audit_buffer is used when formatting an audit record.  The caller
++ * locks briefly to get the record off the freelist or to allocate the
++ * buffer, and locks briefly to send the buffer to the netlink layer or
++ * to place it on a transmit queue.  Multiple audit_buffers can be in
++ * use simultaneously. */
++struct audit_buffer {
++	struct sk_buff       *skb;	/* formatted skb ready to send */
++	struct audit_context *ctx;	/* NULL or associated context */
++	gfp_t		     gfp_mask;
++
++	/* Adil. creating new contexts for hardlog */
++	char* hardlog_event_buffer;
++	int hardlog_event_consumed;
++};
++
++typedef void func_type1(struct audit_buffer*);
++extern func_type1* audit_log_start_hardlog_ptr;
++extern func_type1* audit_log_end_hardlog_ptr;
++
++typedef void func_type2(struct audit_buffer*, const char* fmt, va_list args);
++extern func_type2* audit_log_format_hardlog_ptr;
++
++typedef void func_type3(struct audit_buffer* ab, const char* string, size_t slen);
++extern func_type3* audit_log_n_string_hardlog_ptr;
++
++typedef void func_type4(struct audit_buffer *ab, const unsigned char *buf, size_t len);
++extern func_type4* audit_log_n_hex_hardlog_ptr;
++
++
++/* defined in kernel/hardlog.c */
++bool is_hardlog_active(void);
++bool is_hardlog_microlog_active(void);
+\ No newline at end of file
+diff -urN '--exclude=signing_key.pem' '--exclude=signing_key.x509' '--exclude=x509.genkey' '--exclude=inat-tables.c' '--exclude=fixdep' '--exclude=objtool' desktop-original/kernel/audit.c desktop-hardlog/kernel/audit.c
+--- desktop-original/kernel/audit.c	2021-01-23 09:58:01.000000000 -0500
++++ desktop-hardlog/kernel/audit.c	2022-03-26 01:41:09.506192107 -0400
+@@ -62,6 +62,9 @@
+ 
+ #include "audit.h"
+ 
++/* HARDLOG: Including a header file for hardlog-related definitions. */
++#include <linux/hardlog.h>
++
+ /* No auditing will take place until audit_initialized == AUDIT_INITIALIZED.
+  * (Initialization happens after skb_init is called.) */
+ #define AUDIT_DISABLED		-1
+@@ -140,16 +143,35 @@
+ 
+ static struct kmem_cache *audit_buffer_cache;
+ 
++// /* queue msgs to send via kauditd_task */
++// static struct sk_buff_head audit_queue;
++// /* queue msgs due to temporary unicast send problems */
++// static struct sk_buff_head audit_retry_queue;
++// /* queue msgs waiting for new auditd connection */
++// static struct sk_buff_head audit_hold_queue;
++
++// /* queue servicing thread */
++// static struct task_struct *kauditd_task;
++// static DECLARE_WAIT_QUEUE_HEAD(kauditd_wait);
++
++/* HARDLOG: Removed static because of extern. Not sure if this
++ * is still needed however. (CHECK) */
+ /* queue msgs to send via kauditd_task */
+-static struct sk_buff_head audit_queue;
++struct sk_buff_head audit_queue;
+ /* queue msgs due to temporary unicast send problems */
+-static struct sk_buff_head audit_retry_queue;
++struct sk_buff_head audit_retry_queue;
+ /* queue msgs waiting for new auditd connection */
+-static struct sk_buff_head audit_hold_queue;
++struct sk_buff_head audit_hold_queue;
+ 
+ /* queue servicing thread */
+ static struct task_struct *kauditd_task;
+-static DECLARE_WAIT_QUEUE_HEAD(kauditd_wait);
++
++/* HARDLOG: Removed static because Hardlog must grab this lock
++ * and prevent native kaudit from executing. */
++// Previous.
++// static DECLARE_WAIT_QUEUE_HEAD(kauditd_wait);
++DECLARE_WAIT_QUEUE_HEAD(kauditd_wait);
++
+ 
+ /* waitqueue for callers who are blocked on the audit backlog */
+ static DECLARE_WAIT_QUEUE_HEAD(audit_backlog_wait);
+@@ -190,11 +212,11 @@
+  * buffer, and locks briefly to send the buffer to the netlink layer or
+  * to place it on a transmit queue.  Multiple audit_buffers can be in
+  * use simultaneously. */
+-struct audit_buffer {
+-	struct sk_buff       *skb;	/* formatted skb ready to send */
+-	struct audit_context *ctx;	/* NULL or associated context */
+-	gfp_t		     gfp_mask;
+-};
++// struct audit_buffer {
++// 	struct sk_buff       *skb;	/* formatted skb ready to send */
++// 	struct audit_context *ctx;	/* NULL or associated context */
++// 	gfp_t		     gfp_mask;
++// };
+ 
+ struct audit_reply {
+ 	__u32 portid;
+@@ -203,6 +225,24 @@
+ };
+ 
+ /**
++ * HARDLOG: Exporting the audit queues for use in kernel module
++ * and creating a waitqueue so that the kauditd thread can be
++ * put to sleep when hardlog_auditd_thread is awake.
++ */
++DECLARE_WAIT_QUEUE_HEAD(hardlog_auditd_wait);
++
++// wait queues
++EXPORT_SYMBOL_GPL(kauditd_wait);
++EXPORT_SYMBOL_GPL(hardlog_auditd_wait);
++
++// audit buffer queues
++EXPORT_SYMBOL_GPL(audit_queue);
++EXPORT_SYMBOL_GPL(audit_hold_queue);
++EXPORT_SYMBOL_GPL(audit_retry_queue);
++
++/* HARDLOG: end of exports. */
++
++/**
+  * auditd_test_task - Check to see if a given task is an audit daemon
+  * @task: the task to check
+  *
+@@ -752,6 +792,11 @@
+ 			consume_skb(skb);
+ 			failed = 0;
+ 		}
++
++		/* HARDLOG: Send this thread to sleep when hardlog's kernel thread
++		 * is active. Essentially, stop kaudit and rely on Hardlog now. */
++		wait_event_interruptible(hardlog_auditd_wait, 
++			is_hardlog_active() ? false : true);
+ 	}
+ 
+ out:
+@@ -1809,8 +1854,20 @@
+ 		return NULL;
+ 	}
+ 
++	/* HARDLOG: Notify hardlog that a new log entry is created. */
++	if (is_hardlog_active())
++		audit_log_start_hardlog_ptr(ab);
++
+ 	audit_get_stamp(ab->ctx, &t, &serial);
+-	audit_log_format(ab, "audit(%llu.%03lu:%u): ",
++
++	/* HARDLOG: Implemented micro-log to remove the extraneous
++	 * messages being added to each log entry. This can be enabled
++	 * or disabled using the Hardlog host module. */
++	if (is_hardlog_microlog_active())
++		audit_log_format(ab, "%llu.%03lu:%u: ",
++			 (unsigned long long)t.tv_sec, t.tv_nsec/1000000, serial);
++	else 
++		audit_log_format(ab, "audit(%llu.%03lu:%u): ",
+ 			 (unsigned long long)t.tv_sec, t.tv_nsec/1000000, serial);
+ 
+ 	return ab;
+@@ -1899,7 +1956,13 @@
+ 	if (!ab)
+ 		return;
+ 	va_start(args, fmt);
+-	audit_log_vformat(ab, fmt, args);
++	if (is_hardlog_active()) {
++		/* Hardlog is active, thus, we should push this into
++		the circular buffer instead of the audit queue. */
++		audit_log_format_hardlog_ptr(ab, fmt, args);
++	} else {
++		audit_log_vformat(ab, fmt, args);
++	}
+ 	va_end(args);
+ }
+ 
+@@ -1921,6 +1984,10 @@
+ 	unsigned char *ptr;
+ 	struct sk_buff *skb;
+ 
++	/* if hardlog is active, just jump to its functions */
++	if (is_hardlog_active())
++		audit_log_n_hex_hardlog_ptr(ab, buf, len);
++
+ 	if (!ab)
+ 		return;
+ 
+@@ -1954,6 +2021,10 @@
+ 	unsigned char *ptr;
+ 	struct sk_buff *skb;
+ 
++	/* if hardlog is active, just jump to its functions */
++	if (is_hardlog_active())
++		audit_log_n_hex_hardlog_ptr(ab, string, slen);
++
+ 	if (!ab)
+ 		return;
+ 
+@@ -2007,10 +2078,18 @@
+ void audit_log_n_untrustedstring(struct audit_buffer *ab, const char *string,
+ 				 size_t len)
+ {
+-	if (audit_string_contains_control(string, len))
+-		audit_log_n_hex(ab, string, len);
+-	else
+-		audit_log_n_string(ab, string, len);
++	/* if hardlog is active, we go direct to its functions */
++	if (is_hardlog_active()) {
++		if (audit_string_contains_control(string, len))
++			audit_log_n_hex_hardlog_ptr(ab, string, len);
++		else
++			audit_log_n_string_hardlog_ptr(ab, string, len);
++	} else {
++		if (audit_string_contains_control(string, len))
++			audit_log_n_hex(ab, string, len);
++		else
++			audit_log_n_string(ab, string, len);
++	}
+ }
+ 
+ /**
+@@ -2085,7 +2164,12 @@
+ 		return 0;
+ 	}
+ 
+-	audit_log_format(ab, " subj=%s", ctx);
++	/* hardlog */
++	if (is_hardlog_microlog_active())
++		audit_log_format(ab, " %s", ctx);
++	else 
++		audit_log_format(ab, " subj=%s", ctx);
++
+ 	security_release_secctx(ctx, len);
+ 	return 0;
+ 
+@@ -2107,11 +2191,21 @@
+ 	if (!exe_file)
+ 		goto out_null;
+ 
+-	audit_log_d_path(ab, " exe=", &exe_file->f_path);
++	/* hardlog */
++	if (is_hardlog_microlog_active())
++		audit_log_d_path(ab, " ", &exe_file->f_path);
++	else
++		audit_log_d_path(ab, " exe=", &exe_file->f_path);
++
+ 	fput(exe_file);
+ 	return;
+ out_null:
+-	audit_log_format(ab, " exe=(null)");
++	
++	/* hardlog */
++	if (is_hardlog_microlog_active()) 
++		audit_log_format(ab, " (null)");
++	else 
++		audit_log_format(ab, " exe=(null)");
+ }
+ 
+ struct tty_struct *audit_get_tty(void)
+@@ -2142,28 +2236,59 @@
+ 
+ 	cred = current_cred();
+ 	tty = audit_get_tty();
+-	audit_log_format(ab,
+-			 " ppid=%d pid=%d auid=%u uid=%u gid=%u"
+-			 " euid=%u suid=%u fsuid=%u"
+-			 " egid=%u sgid=%u fsgid=%u tty=%s ses=%u",
+-			 task_ppid_nr(current),
+-			 task_tgid_nr(current),
+-			 from_kuid(&init_user_ns, audit_get_loginuid(current)),
+-			 from_kuid(&init_user_ns, cred->uid),
+-			 from_kgid(&init_user_ns, cred->gid),
+-			 from_kuid(&init_user_ns, cred->euid),
+-			 from_kuid(&init_user_ns, cred->suid),
+-			 from_kuid(&init_user_ns, cred->fsuid),
+-			 from_kgid(&init_user_ns, cred->egid),
+-			 from_kgid(&init_user_ns, cred->sgid),
+-			 from_kgid(&init_user_ns, cred->fsgid),
+-			 tty ? tty_name(tty) : "(none)",
+-			 audit_get_sessionid(current));
+-	audit_put_tty(tty);
+-	audit_log_format(ab, " comm=");
+-	audit_log_untrustedstring(ab, get_task_comm(comm, current));
+-	audit_log_d_path_exe(ab, current->mm);
+-	audit_log_task_context(ab);
++
++	if (is_hardlog_microlog_active()) {
++
++		/* Hardlog. making microlog */
++		audit_log_format(ab,
++				" %d %d %u %u %u"
++				" %u %u %u"
++				" %u %u %u %s %u",
++				task_ppid_nr(current),
++				task_tgid_nr(current),
++				from_kuid(&init_user_ns, audit_get_loginuid(current)),
++				from_kuid(&init_user_ns, cred->uid),
++				from_kgid(&init_user_ns, cred->gid),
++				from_kuid(&init_user_ns, cred->euid),
++				from_kuid(&init_user_ns, cred->suid),
++				from_kuid(&init_user_ns, cred->fsuid),
++				from_kgid(&init_user_ns, cred->egid),
++				from_kgid(&init_user_ns, cred->sgid),
++				from_kgid(&init_user_ns, cred->fsgid),
++				tty ? tty_name(tty) : "(none)",
++				audit_get_sessionid(current));
++		audit_put_tty(tty);
++		audit_log_format(ab, " ");
++		audit_log_untrustedstring(ab, get_task_comm(comm, current));
++		audit_log_d_path_exe(ab, current->mm);
++		audit_log_task_context(ab);
++
++	} else {
++
++		/* Hardlog. normal logs */
++		audit_log_format(ab,
++				" ppid=%d pid=%d auid=%u uid=%u gid=%u"
++				" euid=%u suid=%u fsuid=%u"
++				" egid=%u sgid=%u fsgid=%u tty=%s ses=%u",
++				task_ppid_nr(current),
++				task_tgid_nr(current),
++				from_kuid(&init_user_ns, audit_get_loginuid(current)),
++				from_kuid(&init_user_ns, cred->uid),
++				from_kgid(&init_user_ns, cred->gid),
++				from_kuid(&init_user_ns, cred->euid),
++				from_kuid(&init_user_ns, cred->suid),
++				from_kuid(&init_user_ns, cred->fsuid),
++				from_kgid(&init_user_ns, cred->egid),
++				from_kgid(&init_user_ns, cred->sgid),
++				from_kgid(&init_user_ns, cred->fsgid),
++				tty ? tty_name(tty) : "(none)",
++				audit_get_sessionid(current));
++		audit_put_tty(tty);
++		audit_log_format(ab, " comm=");
++		audit_log_untrustedstring(ab, get_task_comm(comm, current));
++		audit_log_d_path_exe(ab, current->mm);
++		audit_log_task_context(ab);
++	}
+ }
+ EXPORT_SYMBOL(audit_log_task_info);
+ 
+@@ -2314,6 +2439,15 @@
+ 	struct sk_buff *skb;
+ 	struct nlmsghdr *nlh;
+ 
++	/* HARDLOG: We should notify the logging background thread
++	   that the message is ready to be flushed. This should return
++	   without sending the message to the NETLINK interface. */
++	if (is_hardlog_active()) {
++		audit_log_end_hardlog_ptr(ab);
++		audit_buffer_free(ab);
++		return;
++	}
++
+ 	if (!ab)
+ 		return;
+ 
+diff -urN '--exclude=signing_key.pem' '--exclude=signing_key.x509' '--exclude=x509.genkey' '--exclude=inat-tables.c' '--exclude=fixdep' '--exclude=objtool' desktop-original/kernel/auditsc.c desktop-hardlog/kernel/auditsc.c
+--- desktop-original/kernel/auditsc.c	2021-01-23 09:58:01.000000000 -0500
++++ desktop-hardlog/kernel/auditsc.c	2022-03-26 01:41:09.506192107 -0400
+@@ -130,6 +130,9 @@
+ 	struct audit_chunk *c[31];
+ };
+ 
++/* HARDLOG: Including hardlog-related definitions. */
++#include <linux/hardlog.h>
++
+ static int audit_match_perm(struct audit_context *ctx, int mask)
+ {
+ 	unsigned n;
+@@ -965,20 +968,42 @@
+ 	if (!ab)
+ 		return rc;
+ 
+-	audit_log_format(ab, "opid=%d oauid=%d ouid=%d oses=%d", pid,
+-			 from_kuid(&init_user_ns, auid),
+-			 from_kuid(&init_user_ns, uid), sessionid);
+-	if (sid) {
+-		if (security_secid_to_secctx(sid, &ctx, &len)) {
+-			audit_log_format(ab, " obj=(none)");
+-			rc = 1;
+-		} else {
+-			audit_log_format(ab, " obj=%s", ctx);
+-			security_release_secctx(ctx, len);
++	/* HARDLOG: Reduce extraneous messages, if microlog is enabled. Otherwise,
++	 * produce normal logs. */
++	if (is_hardlog_microlog_active()) {
++		audit_log_format(ab, "%d %d %d %d", pid,
++				from_kuid(&init_user_ns, auid),
++				from_kuid(&init_user_ns, uid), sessionid);
++		if (sid) {
++			if (security_secid_to_secctx(sid, &ctx, &len)) {
++				audit_log_format(ab, " (none)");
++				rc = 1;
++			} else {
++				audit_log_format(ab, " %s", ctx);
++				security_release_secctx(ctx, len);
++			}
++		}
++		audit_log_format(ab, " ");
++		audit_log_untrustedstring(ab, comm);
++
++	} else {
++		audit_log_format(ab, "opid=%d oauid=%d ouid=%d oses=%d", pid,
++				from_kuid(&init_user_ns, auid),
++				from_kuid(&init_user_ns, uid), sessionid);
++		if (sid) {
++			if (security_secid_to_secctx(sid, &ctx, &len)) {
++				audit_log_format(ab, " obj=(none)");
++				rc = 1;
++			} else {
++				audit_log_format(ab, " obj=%s", ctx);
++				security_release_secctx(ctx, len);
++			}
+ 		}
++		audit_log_format(ab, " ocomm=");
++		audit_log_untrustedstring(ab, comm);
++
+ 	}
+-	audit_log_format(ab, " ocomm=");
+-	audit_log_untrustedstring(ab, comm);
++
+ 	audit_log_end(ab);
+ 
+ 	return rc;
+@@ -1454,25 +1479,53 @@
+ 	ab = audit_log_start(context, GFP_KERNEL, AUDIT_SYSCALL);
+ 	if (!ab)
+ 		return;		/* audit_panic has been called */
+-	audit_log_format(ab, "arch=%x syscall=%d",
+-			 context->arch, context->major);
+-	if (context->personality != PER_LINUX)
+-		audit_log_format(ab, " per=%lx", context->personality);
+-	if (context->return_valid)
+-		audit_log_format(ab, " success=%s exit=%ld",
+-				 (context->return_valid==AUDITSC_SUCCESS)?"yes":"no",
+-				 context->return_code);
+-
+-	audit_log_format(ab,
+-			 " a0=%lx a1=%lx a2=%lx a3=%lx items=%d",
+-			 context->argv[0],
+-			 context->argv[1],
+-			 context->argv[2],
+-			 context->argv[3],
+-			 context->name_count);
+ 
+-	audit_log_task_info(ab);
+-	audit_log_key(ab, context->filterkey);
++	/* HARDLOG: Reduce extraneous messages, if microlog is enabled. Otherwise,
++	 * produce normal logs. */
++	if (is_hardlog_microlog_active()) {
++		audit_log_format(ab, "%x %d",
++				context->arch, context->major);
++		if (context->personality != PER_LINUX)
++			audit_log_format(ab, " %lx", context->personality);
++		if (context->return_valid)
++			audit_log_format(ab, " %s %ld",
++					(context->return_valid==AUDITSC_SUCCESS)?"yes":"no",
++					context->return_code);
++
++		audit_log_format(ab,
++				" %lx %lx %lx %lx %d",
++				context->argv[0],
++				context->argv[1],
++				context->argv[2],
++				context->argv[3],
++				context->name_count);
++
++		audit_log_task_info(ab);
++		audit_log_key(ab, context->filterkey);
++
++	} else {
++		audit_log_format(ab, "arch=%x syscall=%d",
++				context->arch, context->major);
++		if (context->personality != PER_LINUX)
++			audit_log_format(ab, " per=%lx", context->personality);
++		if (context->return_valid)
++			audit_log_format(ab, " success=%s exit=%ld",
++					(context->return_valid==AUDITSC_SUCCESS)?"yes":"no",
++					context->return_code);
++
++		audit_log_format(ab,
++				" a0=%lx a1=%lx a2=%lx a3=%lx items=%d",
++				context->argv[0],
++				context->argv[1],
++				context->argv[2],
++				context->argv[3],
++				context->name_count);
++
++		audit_log_task_info(ab);
++		audit_log_key(ab, context->filterkey);
++
++	}
++
+ 	audit_log_end(ab);
+ 
+ 	for (aux = context->aux; aux; aux = aux->next) {
+@@ -1510,21 +1563,48 @@
+ 		show_special(context, &call_panic);
+ 
+ 	if (context->fds[0] >= 0) {
+-		ab = audit_log_start(context, GFP_KERNEL, AUDIT_FD_PAIR);
+-		if (ab) {
+-			audit_log_format(ab, "fd0=%d fd1=%d",
+-					context->fds[0], context->fds[1]);
+-			audit_log_end(ab);
++
++		/* HARDLOG: Reduce extraneous messages, if microlog is enabled. Otherwise,
++		 * produce normal logs. */
++		if (is_hardlog_microlog_active()) {
++			ab = audit_log_start(context, GFP_KERNEL, AUDIT_FD_PAIR);
++			if (ab) {
++				audit_log_format(ab, "%d %d",
++						context->fds[0], context->fds[1]);
++				audit_log_end(ab);
++			}
++		} else {
++			ab = audit_log_start(context, GFP_KERNEL, AUDIT_FD_PAIR);
++			if (ab) {
++				audit_log_format(ab, "fd0=%d fd1=%d",
++						context->fds[0], context->fds[1]);
++				audit_log_end(ab);
++			}
++
+ 		}
++
+ 	}
+ 
+ 	if (context->sockaddr_len) {
+-		ab = audit_log_start(context, GFP_KERNEL, AUDIT_SOCKADDR);
+-		if (ab) {
+-			audit_log_format(ab, "saddr=");
+-			audit_log_n_hex(ab, (void *)context->sockaddr,
+-					context->sockaddr_len);
+-			audit_log_end(ab);
++
++		/* HARDLOG: Reduce extraneous messages, if microlog is enabled. Otherwise,
++		 * produce normal logs. */
++		if (is_hardlog_microlog_active()) {
++			ab = audit_log_start(context, GFP_KERNEL, AUDIT_SOCKADDR);
++			if (ab) {
++				audit_log_n_hex(ab, (void *)context->sockaddr,
++						context->sockaddr_len);
++				audit_log_end(ab);
++			}
++		} else {
++			ab = audit_log_start(context, GFP_KERNEL, AUDIT_SOCKADDR);
++			if (ab) {
++				audit_log_format(ab, "saddr=");
++				audit_log_n_hex(ab, (void *)context->sockaddr,
++						context->sockaddr_len);
++				audit_log_end(ab);
++			}
++
+ 		}
+ 	}
+ 
+diff -urN '--exclude=signing_key.pem' '--exclude=signing_key.x509' '--exclude=x509.genkey' '--exclude=inat-tables.c' '--exclude=fixdep' '--exclude=objtool' desktop-original/kernel/hardlog.c desktop-hardlog/kernel/hardlog.c
+--- desktop-original/kernel/hardlog.c	1969-12-31 19:00:00.000000000 -0500
++++ desktop-hardlog/kernel/hardlog.c	2022-03-26 01:41:09.510192085 -0400
+@@ -0,0 +1,110 @@
++/**
++ * This file contains the major host kernel portion of hardlog's implementation.
++ * In general, it enables Hardlog module functions to be used, instead of the
++ * native kaudit functions.
++ */
++
++#include <linux/file.h>
++#include <linux/init.h>
++#include <linux/types.h>
++#include <linux/atomic.h>
++#include <linux/mm.h>
++#include <linux/export.h>
++#include <linux/slab.h>
++#include <linux/err.h>
++#include <linux/kthread.h>
++#include <linux/kernel.h>
++#include <linux/syscalls.h>
++#include <linux/spinlock.h>
++#include <linux/rcupdate.h>
++#include <linux/mutex.h>
++#include <linux/gfp.h>
++#include <linux/pid.h>
++
++#include <linux/audit.h>
++
++#include <net/sock.h>
++#include <net/netlink.h>
++#include <linux/skbuff.h>
++#ifdef CONFIG_SECURITY
++#include <linux/security.h>
++#endif
++#include <linux/freezer.h>
++#include <linux/pid_namespace.h>
++#include <net/netns/generic.h>
++
++#include <linux/shmem_fs.h>
++#include <linux/pipe_fs_i.h>
++#include <linux/mount.h>
++#include <linux/fs_struct.h>
++#include <linux/task_work.h>
++#include <linux/file.h>
++#include <linux/circ_buf.h>
++
++#include "audit.h"
++#include <linux/hardlog.h>
++#include <linux/kallsyms.h>
++
++/* Signals the kauditd thread that hardlog is active or not. */
++bool hardlog_active = false;
++bool hardlog_microlog_active = false;
++EXPORT_SYMBOL_GPL(hardlog_active);
++EXPORT_SYMBOL_GPL(hardlog_microlog_active);
++
++/* Pointers for all logging functions (defined in Hardlog host kernel module). */
++func_type1* audit_log_start_hardlog_ptr;
++func_type1* audit_log_end_hardlog_ptr;
++func_type2* audit_log_format_hardlog_ptr;
++func_type3* audit_log_n_string_hardlog_ptr;
++func_type4* audit_log_n_hex_hardlog_ptr;
++
++bool is_hardlog_active(void) {
++    return hardlog_active;
++}
++
++bool is_hardlog_microlog_active(void) {
++    return hardlog_microlog_active;
++}
++
++/* Lookup all the required symbols. These symbols are defined in external kernel module,
++ * and exported for internal kernel functions (like the one below) to use. */
++bool setup_hardlog_pointers(void) {
++
++    audit_log_start_hardlog_ptr = (func_type1*) kallsyms_lookup_name("audit_log_start_hardlog");
++    if (audit_log_start_hardlog_ptr == 0) {
++        HARDLOG_PRINT("error: failed to get the pointer for 'audit_log_start_hardlog'\n");
++        return false;
++    }
++    HARDLOG_PRINT("success: got pointer for 'audit_log_start_hardlog'\n");
++
++    audit_log_end_hardlog_ptr = (func_type1*) kallsyms_lookup_name("audit_log_end_hardlog");
++    if (audit_log_end_hardlog_ptr == 0) {
++        HARDLOG_PRINT("error: failed to get the pointer for 'audit_log_end_hardlog'\n");
++        return false;
++    }
++    HARDLOG_PRINT("success: got pointer for 'audit_log_end_hardlog'\n");
++
++    audit_log_format_hardlog_ptr = (func_type2*) kallsyms_lookup_name("audit_log_format_hardlog");
++    if (audit_log_format_hardlog_ptr == 0) {
++        HARDLOG_PRINT("error: failed to get the pointer for 'audit_log_format_hardlog'\n");
++        return false;
++    }
++    HARDLOG_PRINT("success: got pointer for 'audit_log_format_hardlog'\n");
++
++    audit_log_n_string_hardlog_ptr = (func_type3*) kallsyms_lookup_name("audit_log_n_string_hardlog");
++    if (audit_log_n_string_hardlog_ptr == 0) {
++        HARDLOG_PRINT("error: failed to get the pointer for 'audit_log_n_string_hardlog'\n");
++        return false;
++    }
++    HARDLOG_PRINT("success: got pointer for 'audit_log_n_string_hardlog'\n");
++
++    audit_log_n_hex_hardlog_ptr = (func_type4*) kallsyms_lookup_name("audit_log_n_hex_hardlog");
++    if (audit_log_n_hex_hardlog_ptr == 0) {
++        HARDLOG_PRINT("error: failed to get the pointer for 'audit_log_n_hex_hardlog'\n");
++        return false;
++    }
++    HARDLOG_PRINT("success: got pointer for 'audit_log_n_hex_hardlog'\n");
++
++    return true;
++}
++EXPORT_SYMBOL(setup_hardlog_pointers);
+\ No newline at end of file
+diff -urN '--exclude=signing_key.pem' '--exclude=signing_key.x509' '--exclude=x509.genkey' '--exclude=inat-tables.c' '--exclude=fixdep' '--exclude=objtool' desktop-original/kernel/Makefile desktop-hardlog/kernel/Makefile
+--- desktop-original/kernel/Makefile	2021-01-23 09:58:01.000000000 -0500
++++ desktop-hardlog/kernel/Makefile	2022-03-26 01:41:09.506192107 -0400
+@@ -76,7 +76,7 @@
+ obj-$(CONFIG_IKHEADERS) += kheaders.o
+ obj-$(CONFIG_SMP) += stop_machine.o
+ obj-$(CONFIG_KPROBES_SANITY_TEST) += test_kprobes.o
+-obj-$(CONFIG_AUDIT) += audit.o auditfilter.o
++obj-$(CONFIG_AUDIT) += audit.o hardlog.o auditfilter.o
+ obj-$(CONFIG_AUDITSYSCALL) += auditsc.o audit_watch.o audit_fsnotify.o audit_tree.o
+ obj-$(CONFIG_GCOV_KERNEL) += gcov/
+ obj-$(CONFIG_KCOV) += kcov.o
