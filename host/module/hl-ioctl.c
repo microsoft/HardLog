@@ -165,6 +165,7 @@ static struct file_operations fops =
 /* Initialize the module for IOCTL commands */
 bool hardlog_ioctl_init(void) {
 
+#if 0
     /* open request file */
     if (!bio_open_request_file("sdc")) {
         HARDLOG_MODULE_PRINT("error: couldn't open request file.\n");
@@ -194,7 +195,8 @@ bool hardlog_ioctl_init(void) {
     }
     snprintf(testmsg, 20, "HELLO WORLD\n");
     HARDLOG_MODULE_PRINT("detail: message sent is %s", testmsg);
-    bio_write_reqfile(testmsg);
+    bio_write_request_file(testmsg);
+#endif
 
     /* Allocate a character device. */
     if (alloc_chrdev_region(&dev, 0, 1, "hardlog_dev") < 0) {
