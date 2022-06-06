@@ -5,7 +5,7 @@
 set -x
 set -e
 
-KERNEL_DEB=linux-source-legacy-rockchip64_22.02.1_all.deb
+KERNEL_DEB=linux-source-legacy-rockchip64_22.05.1_all.deb
 KERNEL_SRC=linux-source-4.4.213-rockchip64.tar.xz
 
 pushd device
@@ -14,6 +14,7 @@ pushd device
   pushd kernel
     wget -q https://armbian.hosthatch.com/apt/pool/main/l/linux-source-4.4.213-legacy-rockchip64/${KERNEL_DEB}
     dpkg -x ${KERNEL_DEB} .
+    mkdir -p linux
     tar xf usr/src/${KERNEL_SRC} -C linux
 
     pushd linux
