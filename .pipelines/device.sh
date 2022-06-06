@@ -14,6 +14,7 @@ pushd device
     tar xf usr/src/${KERNEL_SRC} -C linux
 
     pushd linux
+      patch -s -p1 < ../module/linux-4.4.213-usb-gadget.diff
       ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make prepare
       ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make scripts
       ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make M=../module -j$(nproc)

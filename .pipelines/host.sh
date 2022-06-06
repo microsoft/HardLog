@@ -12,9 +12,9 @@ pushd host
 
     # patch the kernel
     mv ${BASE_KERNEL} desktop-hardlog
-    patch -s -p1 < linux-5.4.92-host.diff
 
     pushd desktop-hardlog
+      patch -s -p1 < ../linux-5.4.92-host.diff
       # build using default config
       make defconfig
       make prepare
