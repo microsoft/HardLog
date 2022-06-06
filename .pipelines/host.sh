@@ -24,7 +24,7 @@ pushd host
       make kernel/audit.o
       make kernel/auditsc.o
       make kernel/hardlog.o
-      make M=../module -j$(nproc)
+      make M=../../module -j$(nproc)
     popd
   popd
 
