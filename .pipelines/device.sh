@@ -2,6 +2,9 @@
 # Copyright (c) 2022 Microsoft Corporation.
 # Licensed under the MIT License.
 
+set -x
+set -e
+
 KERNEL_DEB=linux-source-legacy-rockchip64_22.02.1_all.deb
 KERNEL_SRC=linux-source-4.4.213-rockchip64.tar.xz
 
