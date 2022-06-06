@@ -17,11 +17,15 @@ pushd device
     mkdir -p linux
     tar xf usr/src/${KERNEL_SRC} -C linux
 
+    cp -r linux/drivers/usb/gadget ../module/usb-gadget
+    pushd ../module
+      patch -s -p0 < linux-4.4.213-usb-gadget.diff
+    popd
+
     pushd linux
-      patch -s -p1 < ../../module/linux-4.4.213-usb-gadget.diff
       ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make prepare
       ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make scripts
-      ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make M=../../module -j$(nproc)
+      ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make M=../../module/usb-gadget -j$(nproc)
     popd
   popd
 

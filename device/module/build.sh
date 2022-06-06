@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-# Go into the deviice kernel folder and build our USB device driver using its Makefile
+# Go into the device kernel folder and build our USB device driver using its Makefile
 pushd ../kernel/linux/
   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- M=../../module/usb-gadget -j$(nproc)
 popd
