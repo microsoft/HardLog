@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2021, Microsoft Corporation. */
 
 /* This file contains the code that sends administrator requests 
    to the usb device using Linux's block io or virtual filesystem

@@ -1,7 +1,5 @@
-/*
-*  Copyright (c) 2021-2022 Microsoft Corporation.
-*  Licensed under the MIT License.
-*/
+// SPDX-License-Identifier: MIT
+/* Copyright (c) 2021, Microsoft Corporation. */
 
 /* This file will wait for some signal from the kernel module
    which basically wakes up the thread, if there is some command

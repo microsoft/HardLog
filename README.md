@@ -1,27 +1,38 @@
-# HardLog
+# Hardlog: Practical and Effective System Auditing using a Novel Audit Device
 
-To be filled
+Prototype source code for the [Hardlog research paper](https://www.microsoft.com/en-us/research/uploads/prod/2022/04/hardlog-sp22.pdf), presented at IEEE S&P (*Oakland*) 2022. If you find this repository useful, please cite our paper/repository.
 
-## Organization
+    @inproceedings{ahmad2022hardlog,
+        author = {Ahmad, Adil and Lee, Sangho and Peinado, Marcus},
+        title = {HardLog: Practical Tamper-Proof System Auditing Using a Novel Audit Device},
+        booktitle = {43rd IEEE Symposium on Security and Privacy (Oakland 2022)},
+        year = {2022},
+        month = {May},
+        url = {https://www.microsoft.com/en-us/research/publication/hardlog-practical-tamper-proof-system-auditing-using-a-novel-audit-device/},
+    }
 
-## Contributing
+    @misc{hardlog-github-repo,
+        title={Hardlog: Practical and Effective System Auditing using a Novel Audit Device},
+        howpublished={\url{https://github.com/microsoft/HardLog}}
+    }
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+## 1. Machine Setup
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+Hardlog requires two machines---audit device and host---connected through a USB-3.0 interface. While there are numerous machine configurations that should work, we provide below the specifications for machines that we tested with.
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+### Audit Device 
 
-## Trademarks
+We used a RockPro64 development board, equipped with an RK3399 ARM CPU. The board came with 2 GB of main memory. We attached a 250 GB SSD (tested with WD SN550 and Samsung 950 Pro) using its PCIe interface. On the software side, the board was running Armbian 21.05 (Buster) with Linux v4.4.213. The details about building the correct software toolchain (including OS) is provided below.
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
-trademarks or logos is subject to and must follow
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+### Host
+
+The host machine came with an Intel (c) Core i7-8700 x86 CPU with 16 GB of DDR4 memory. The host machine had a 512 GB SSD (Samsung 970 Pro), connected through PCIe 3. On the software side, the machine ran Elementary OS Hera 5.1.7 with Linux v5.4.97. We also partly tested with a vanilla Ubuntu 20.04 OS.
+
+
+## 2. Directory Setup
+
+This repository contains two main folders---host and device. The host directory contains scripts to build the kernel, module and library for the host machine. The device folder contains similar scripts for the audit device.
+
+## 3. Build Directions
+
+Please follow the steps outlined in the host and device folder READMEs, respectively. 

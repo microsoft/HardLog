@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2021, Microsoft Corporation. */
+
 /* This file contains the IOCTL implementation for Hardlog's host
    module. This IOCTL is used to send administrator requests to the
    audit device, and receive system logs.
@@ -162,7 +165,6 @@ static struct file_operations fops =
 /* Initialize the module for IOCTL commands */
 bool hardlog_ioctl_init(void) {
 
-#if 0
     /* open request file */
     if (!bio_open_request_file("sdc")) {
         HARDLOG_MODULE_PRINT("error: couldn't open request file.\n");
@@ -193,7 +195,6 @@ bool hardlog_ioctl_init(void) {
     snprintf(testmsg, 20, "HELLO WORLD\n");
     HARDLOG_MODULE_PRINT("detail: message sent is %s", testmsg);
     bio_write_reqfile(testmsg);
-#endif
 
     /* Allocate a character device. */
     if (alloc_chrdev_region(&dev, 0, 1, "hardlog_dev") < 0) {

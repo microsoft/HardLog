@@ -13,9 +13,9 @@ stages:
     steps:
     - script: .pipelines/prepare.sh
       displayName: Prepare packages
-    - script: .pipelines/build-host-kernel.sh
+    - script: .pipelines/host.sh
       displayName: Build host
-    - script: .pipelines/build-device-kernel.sh
+    - script: .pipelines/device.sh
       displayName: Build device
 
 - stage: do_credscan

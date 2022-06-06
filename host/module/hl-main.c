@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2021, Microsoft Corporation. */
+
 /* This file creates a background HardLog daemon, which intercepts data in the 
    circular buffer (HostBuf) and sends the data to the USB audit device. */
 

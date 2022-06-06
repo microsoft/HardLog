@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2021, Microsoft Corporation. */
+
 /* This file logs all system call log entries into the circular buffer (HostBuf), 
    rather than the audit queue (which seems to be rather expensive). 
 

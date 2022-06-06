@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2021, Microsoft Corporation. */
 
 /* This file creates a kernel thread that sends logs to the audit device
    using Linux's Block IO (BIO) or Virtual FileSystem (VFS) interfaces. */

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2021, Microsoft Corporation. */
 
 /* This file reads system logs (in response to admin requests) 
    from the audit device using Linux's Block IO (BIO) or 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Copyright (c) 2021, Microsoft Corporation. */
+
 /* This file performs benchmarking of different system logging
    events. */
 

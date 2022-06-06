@@ -1,8 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* Copyright (c) 2021, Microsoft Corporation. */
+
 #ifndef __HL_H__
 #define __HL_H__
 
 /* -------------------------------------------------------------- */
-/* Adil. Got the below definitions from audit.h in kernel folder */
+/* Retrieved the below definitions from audit.h in kernel folder */
 
 #include <linux/fs.h>
 #include <linux/audit.h>

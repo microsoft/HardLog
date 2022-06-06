@@ -1,7 +1,6 @@
-/*
-*  Copyright (c) 2021-2022 Microsoft Corporation.
-*  Licensed under the MIT License.
-*/
+// SPDX-License-Identifier: MIT
+/* Copyright (c) 2021, Microsoft Corporation. */
+
 #include <iostream>
 #include <string>
 
